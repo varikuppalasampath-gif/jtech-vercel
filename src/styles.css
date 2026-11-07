@@ -1,6 +1,6 @@
 :root{--navy:#14237a;--deep:#0a1440;--ink:#0d1330;--sky:#38bdf8;--sky-d:#0b7bb5;--mist:#eef6fc;--line:#dbe6f0;--mute:#526079;--white:#fff;--amber:#fbbf24;--err:#c0262d;--ok:#16794c;
 --head:'Sora',system-ui,sans-serif;--body:'Inter',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;--pad:clamp(1.25rem,5vw,4rem)}
-*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:5rem}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:5.5rem;scrollbar-gutter:stable}
 body{margin:0;font:400 1rem/1.65 var(--body);color:var(--ink);background:var(--white);-webkit-font-smoothing:antialiased}
 h1,h2,h3{font-family:var(--head);margin:0;line-height:1.12;letter-spacing:-.02em}
 a{color:inherit}img{max-width:100%;height:auto}
@@ -13,12 +13,12 @@ a{color:inherit}img{max-width:100%;height:auto}
 .btn.sm{padding:.6rem 1.15rem;font-size:.92rem;background:var(--navy);color:#fff;box-shadow:none}.btn.sm:hover{background:#1d33a8}
 /* header */
 .hdr{position:fixed;inset:0 0 auto;z-index:30;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);box-shadow:0 1px 0 var(--line)}
-.nav{display:flex;align-items:center;justify-content:space-between;height:4.5rem;gap:1rem}
-.brand img{display:block;height:46px;width:auto}
+.nav{display:flex;align-items:center;justify-content:space-between;height:5.5rem;gap:1rem}
+.brand img{display:block;height:62px;width:auto}
 nav{display:flex;align-items:center;gap:1.35rem}nav a:not(.btn){text-decoration:none;font-weight:500;font-size:.92rem;color:var(--mute);white-space:nowrap}nav a:not(.btn):hover,nav a.active:not(.btn){color:var(--navy)}nav a.active:not(.btn){box-shadow:0 2px 0 var(--sky)}
 .burger{display:none;background:none;border:0;color:var(--navy);cursor:pointer}
 /* hero */
-.hero{background:radial-gradient(120% 90% at 80% 0%,#1d33a8 0%,var(--deep) 55%,#060c2b 100%);color:#fff;position:relative;overflow:hidden;padding-top:4.5rem}
+.hero{background:radial-gradient(120% 90% at 80% 0%,#1d33a8 0%,var(--deep) 55%,#060c2b 100%);color:#fff;position:relative;overflow:hidden;padding-top:5.5rem}
 .net{position:absolute;inset:0;width:100%;height:100%}
 .gear{position:absolute;color:rgba(125,211,252,.22);animation:spin 40s linear infinite}
 .g1{width:min(560px,70vw);right:-120px;top:60px}.g2{width:min(300px,40vw);right:min(380px,30vw);bottom:70px;animation-direction:reverse;animation-duration:28s;color:rgba(125,211,252,.16)}
@@ -69,12 +69,12 @@ input[aria-invalid=true],textarea[aria-invalid=true]{border-color:var(--err)}.er
 .status{grid-column:1/-1;margin:0;min-height:1.5em;display:flex;gap:.5rem;align-items:center;font-weight:500}.status.ok{color:var(--ok)}.status.bad{color:var(--err)}
 /* footer + whatsapp */
 footer{background:#060c2b;color:#9fb6d6;font-size:.9rem;padding:1.75rem 0}.foot{display:flex;flex-wrap:wrap;gap:1rem 2rem;align-items:center;justify-content:space-between}
-.foot img{background:#fff;padding:.4rem .7rem;border-radius:10px;height:auto}
+.foot img{background:#fff;padding:.5rem .9rem;border-radius:10px;height:auto;width:200px}
 .wa{position:fixed;right:1.25rem;bottom:1.25rem;z-index:40;width:3.5rem;height:3.5rem;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center;box-shadow:0 10px 25px -8px rgba(0,0,0,.5);transition:transform .2s}.wa:hover{transform:scale(1.08)}
 @media(max-width:1100px){
 .burger{display:block}
-nav{position:absolute;top:4.5rem;left:0;right:0;flex-direction:column;align-items:flex-start;gap:1rem;padding:1.25rem var(--pad) 1.5rem;background:#fff;border-bottom:1px solid var(--line);display:none}nav.open{display:flex}
-.split,.cgrid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.brand img{height:38px}}
+nav{position:absolute;top:5.5rem;left:0;right:0;flex-direction:column;align-items:flex-start;gap:1rem;padding:1.25rem var(--pad) 1.5rem;background:#fff;border-bottom:1px solid var(--line);display:none}nav.open{display:flex}
+.split,.cgrid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.brand img{height:48px}}
 @media(max-width:900px){.split,.cgrid,.form{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.gear,.marquee div{animation:none}*{transition:none!important}}
 

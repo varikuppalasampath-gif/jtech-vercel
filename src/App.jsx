@@ -264,7 +264,7 @@ function Shell() {
       <a className="skip" href="#main">Skip to content</a>
       <header className={scrolled ? 'hdr on' : 'hdr'}>
         <div className="wrap nav">
-          <Link to="/" className="brand" aria-label="Jtech home"><img src="/logo.png" alt="Jtech Mechatronics and AI Solutions" width="212" height="47" /></Link>
+          <Link to="/" className="brand" aria-label="Jtech home"><img src="/logo.png" alt="Jtech Mechatronics and AI Solutions" width="280" height="62" /></Link>
           <button className="burger" aria-expanded={open} aria-label="Menu" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
           <nav className={open ? 'open' : ''}>
             {NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}
@@ -285,7 +285,7 @@ function Shell() {
           <Route path="*" element={<><PageHead title="Page not found" text="That page does not exist." /><section className="sec"><div className="wrap"><Link className="btn sm" to="/">Back to Home</Link></div></section></>} />
         </Routes>
       </main>
-      <footer><div className="wrap foot"><img src="/logo.png" alt="Jtech" width="150" height="33" /><span>© {new Date().getFullYear()} Jtech Mechatronics and AI Solutions Pvt. Ltd. All rights reserved.</span></div></footer>
+      <footer><div className="wrap foot"><img src="/logo.png" alt="Jtech" width="200" height="45" /><span>© {new Date().getFullYear()} Jtech Mechatronics and AI Solutions Pvt. Ltd. All rights reserved.</span></div></footer>
       <a className="wa" href={`https://wa.me/${PHONE.slice(1)}?text=Hello%20Jtech%2C%20I%20would%20like%20to%20discuss%20a%20project.`} target="_blank" rel="noopener noreferrer" aria-label="Chat on WhatsApp"><MessageCircle size={26} /></a>
     </>
   )
