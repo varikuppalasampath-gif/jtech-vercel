@@ -101,3 +101,4 @@ if ($sent) {
         'error' => 'Could not send enquiry through server. Please contact info@jtech-ai.com.',
     ]);
 }
+
