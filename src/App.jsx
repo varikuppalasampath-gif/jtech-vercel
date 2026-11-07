@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink, Link, useLocation } from 'react-
 import { Menu, X, MessageCircle } from 'lucide-react'
 
 import Home from './pages/Home.jsx'
+import About from './pages/About.jsx'
 import Products from './pages/Products.jsx'
 import Services from './pages/Services.jsx'
 import Industries from './pages/Industries.jsx'
@@ -10,7 +11,6 @@ import Projects from './pages/Projects.jsx'
 import Careers from './pages/Careers.jsx'
 import Contact from './pages/Contact.jsx'
 import PageHead from './components/PageHead.jsx'
-import { Approach, Audience, About } from './components/shared.jsx'
 
 import { PHONE, NAV, TITLES } from './constants.js'
 
@@ -57,14 +57,7 @@ function Shell() {
       <main id="main">
         <Routes>
           <Route path="/" element={<Home topic={topic} setTopic={setTopic} />} />
-          <Route path="/about" element={
-            <>
-              <PageHead title="About Us" text="An engineering team combining electronics, control and software." />
-              <About />
-              <Approach />
-              <Audience />
-            </>
-          } />
+          <Route path="/about"       element={<About />} />
           <Route path="/products"    element={<Products setTopic={setTopic} />} />
           <Route path="/services"    element={<Services setTopic={setTopic} />} />
           <Route path="/industries"  element={<Industries />} />

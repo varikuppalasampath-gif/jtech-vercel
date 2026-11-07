@@ -54,8 +54,8 @@ export function About() {
   )
 }
 
-const MAPS_EMBED = 'https://maps.google.com/maps?q=17.4602748,78.642963&z=17&output=embed'
-const MAPS_LINK  = 'https://www.google.com/maps/place/JTECH+Mechatronics+and+AI+Solutions+Pvt.Ltd./@17.4602748,78.642963,17z'
+const MAPS_LINK = 'https://www.google.com/maps/place/JTECH+Mechatronics+and+AI+Solutions+Pvt.Ltd./@17.4602994,78.6411545,740m/data=!3m1!1e3!4m6!3m5!1s0x3bcb9dce125c586b:0xd4c48f6eddaa4a60!8m2!3d17.4602748!4d78.642963!16s%2Fg%2F11nt_dds7s?authuser=0&entry=ttu'
+const MAPS_EMBED = 'https://maps.google.com/maps?q=17.4602748,78.642963+(JTECH+Mechatronics+and+AI+Solutions+Pvt.Ltd.)&t=&z=16&ie=UTF8&iwloc=B&output=embed'
 
 export function ContactSection({ topic, setTopic }) {
   return (
@@ -67,33 +67,38 @@ export function ContactSection({ topic, setTopic }) {
         </motion.div>
         <div className="cgrid">
           <div className="cinfo">
-            <a href="https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com" target="_blank" rel="noopener noreferrer"><Mail /><span><small>Email</small>info@jtech-ai.com</span></a>
-            <a href={`tel:${PHONE}`}><Phone /><span><small>Phone</small>+91 77806 46425</span></a>
-            <a href={MAPS_LINK} target="_blank" rel="noopener noreferrer"><MapPin /><span><small>Registered address</small>Plot No. 292, Srinivasa Nagar,<br />Rampally, Hyderabad – 501 301</span></a>
+            <a href="https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com" target="_blank" rel="noopener noreferrer">
+              <Mail /><span><small>Email</small>info@jtech-ai.com</span>
+            </a>
+            <a href={`tel:${PHONE}`}>
+              <Phone /><span><small>Phone</small>+91 77806 46425</span>
+            </a>
+            <a href={MAPS_LINK} target="_blank" rel="noopener noreferrer">
+              <MapPin /><span><small>Registered address</small>Plot No. 292, Srinivasa Nagar,<br />Rampally, Hyderabad – 501 301</span>
+            </a>
+
+            {/* Google Map Card placed directly below registered address */}
+            <a
+              href={MAPS_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="map-card"
+              title="Click to open JTECH in Google Maps"
+              aria-label="Open JTECH Mechatronics location in Google Maps"
+            >
+              <iframe
+                src={MAPS_EMBED}
+                title="Jtech Mechatronics and AI Solutions location on Google Maps"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+              <div className="map-badge">
+                <MapPin size={14} /> Open in Google Maps ↗
+              </div>
+            </a>
           </div>
           <Enquiry topic={topic} setTopic={setTopic} />
         </div>
-
-        {/* Google Maps embed — clicking opens the location in Google Maps */}
-        <motion.div className="map-wrap" {...rise}>
-          <iframe
-            src={MAPS_EMBED}
-            title="Jtech Mechatronics and AI Solutions — location map"
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            aria-label="Map showing Jtech office location in Rampally, Hyderabad"
-          />
-          <a
-            className="map-overlay"
-            href={MAPS_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open Jtech location in Google Maps"
-          />
-          <span className="map-badge">
-            <MapPin size={14} /> Open in Google Maps ↗
-          </span>
-        </motion.div>
       </div>
     </section>
   )
