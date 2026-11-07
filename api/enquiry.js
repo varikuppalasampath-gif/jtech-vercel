@@ -13,6 +13,7 @@ const schema = z.object({
 })
 
 const hits = new Map() // best-effort limit per warm instance
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
   const ip = String(req.headers['x-forwarded-for'] || 'x').split(',')[0]
@@ -25,13 +26,26 @@ export default async function handler(req, res) {
   const d = parsed.data
   if (d.website) return res.json({ ok: true })
 
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_TO = 'info@jtech-ai.com' } = process.env
-  if (!SMTP_HOST || !SMTP_PASS) return res.status(500).json({ ok: false, error: 'Please email info@jtech-ai.com directly.' })
+  const {
+    SMTP_HOST = 'smtp.hostinger.com',
+    SMTP_PORT = 465,
+    SMTP_USER = 'info@jtech-ai.com',
+    SMTP_PASS = 'Jtech@1981',
+    MAIL_TO = 'info@jtech-ai.com',
+  } = process.env
+
   try {
-    const t = nodemailer.createTransport({ host: SMTP_HOST, port: Number(SMTP_PORT) || 465, secure: Number(SMTP_PORT || 465) === 465, auth: { user: SMTP_USER, pass: SMTP_PASS } })
+    const t = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT) || 465,
+      secure: Number(SMTP_PORT || 465) === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    })
     await t.sendMail({
-      from: `"Jtech Website" <${SMTP_USER}>`, to: MAIL_TO,
-      replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`, subject: `Website enquiry: ${d.topic}`,
+      from: `"Jtech Website Enquiry" <${SMTP_USER}>`,
+      to: MAIL_TO,
+      replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`,
+      subject: `Website enquiry: ${d.topic}`,
       text: `Name: ${d.name}\nCompany: ${d.company}\nEmail: ${d.email}\nPhone: ${d.phone}\nInterest: ${d.topic}\n\n${d.message}\n`,
     })
     res.json({ ok: true })

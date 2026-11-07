@@ -31,13 +31,28 @@ const schema = z.object({
   website: z.string().optional(), // honeypot
 })
 
-const limiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false,
-  message: { ok: false, error: 'Too many enquiries. Please try again later.' } })
+const limiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Too many enquiries. Please try again later.' },
+})
 
-const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_TO = 'info@jtech-ai.com' } = process.env
-const mailer = SMTP_HOST && SMTP_PASS
-  ? nodemailer.createTransport({ host: SMTP_HOST, port: Number(SMTP_PORT) || 465, secure: Number(SMTP_PORT || 465) === 465, auth: { user: SMTP_USER, pass: SMTP_PASS } })
-  : null
+const {
+  SMTP_HOST = 'smtp.hostinger.com',
+  SMTP_PORT = 465,
+  SMTP_USER = 'info@jtech-ai.com',
+  SMTP_PASS = 'Jtech@1981',
+  MAIL_TO = 'info@jtech-ai.com',
+} = process.env
+
+const mailer = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: Number(SMTP_PORT) || 465,
+  secure: Number(SMTP_PORT || 465) === 465,
+  auth: { user: SMTP_USER, pass: SMTP_PASS },
+})
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
@@ -47,15 +62,27 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   const d = parsed.data
   if (d.website) return res.json({ ok: true }) // bot: pretend success
   const text = `Name: ${d.name}\nCompany: ${d.company}\nEmail: ${d.email}\nPhone: ${d.phone}\nInterest: ${d.topic}\n\n${d.message}\n`
+
   try {
-    if (mailer) {
-      await mailer.sendMail({ from: `"Jtech Website" <${SMTP_USER}>`, to: MAIL_TO, replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`, subject: `Website enquiry: ${d.topic}`, text })
-    } else {
+    await mailer.sendMail({
+      from: `"Jtech Website Enquiry" <${SMTP_USER}>`,
+      to: MAIL_TO,
+      replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`,
+      subject: `Website enquiry: ${d.topic}`,
+      text,
+    })
+    // also save backup to disk
+    try {
       fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d }) + '\n')
-    }
+    } catch (_) {}
+
     res.json({ ok: true })
   } catch (e) {
     console.error('Enquiry failed:', e.message)
+    // fallback save to disk if mail fails
+    try {
+      fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d, error: e.message }) + '\n')
+    } catch (_) {}
     res.status(500).json({ ok: false, error: 'Could not send. Please email info@jtech-ai.com.' })
   }
 })
