@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Send, CheckCircle2, AlertCircle, Mail } from 'lucide-react'
 import { SERVICES } from '../constants.js'
 
 function InputField({ id, label, type = 'text', auto, full, value, onChange, error }) {
@@ -36,6 +36,10 @@ export default function Enquiry({ topic, setTopic }) {
     }
   }
 
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com&su=${encodeURIComponent(`Website enquiry: ${topic}`)}&body=${encodeURIComponent(
+    `Name: ${v.name || ''}\nCompany: ${v.company || ''}\nEmail: ${v.email || ''}\nPhone: ${v.phone || ''}\nInterest: ${topic}\n\nProject details:\n${v.message || ''}`
+  )}`
+
   async function submit(e) {
     e.preventDefault()
     const er = {}
@@ -44,15 +48,24 @@ export default function Enquiry({ topic, setTopic }) {
     if (v.message.trim().length < 10) er.message = 'Describe your requirement in at least 10 characters.'
     setErr(er)
     if (Object.keys(er).length) return
+
     setState({ s: 'sending', m: '' })
     try {
-      const r = await fetch('/api/enquiry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...v, topic }) })
+      const r = await fetch('/api/enquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...v, topic }),
+      })
       const j = await r.json()
-      if (!r.ok || !j.ok) throw new Error(j.error)
+      if (!r.ok || !j.ok) throw new Error(j.error || 'Server could not deliver email.')
       setState({ s: 'ok', m: 'Enquiry sent. We will reply within one working day.' })
       setV({ name: '', company: '', email: '', phone: '', message: '', website: '' })
     } catch (x) {
-      setState({ s: 'bad', m: x.message || 'Could not send. Please email info@jtech-ai.com or call +91 77806 46425.' })
+      console.warn('Backend enquiry submission failed:', x.message)
+      setState({
+        s: 'bad',
+        m: 'Could not send directly from website. Please click below to send via Gmail:',
+      })
     }
   }
 
@@ -112,16 +125,45 @@ export default function Enquiry({ topic, setTopic }) {
         {err.message && <span className="err">{err.message}</span>}
       </div>
       <input className="hp" tabIndex="-1" autoComplete="off" aria-hidden="true" value={v.website} onChange={set('website')} />
-      <div className="full">
+      <div className="full form-actions" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>
         <button className="btn" disabled={state.s === 'sending'}>
           {state.s === 'sending' ? 'Sending…' : <><Send size={18} /> Send enquiry</>}
         </button>
+        <a
+          href={gmailUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="send-gmail-alt"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.9rem', color: 'var(--navy)', textDecoration: 'none', fontWeight: 500 }}
+        >
+          <Mail size={16} /> Or send directly via Gmail ↗
+        </a>
       </div>
-      <p role="status" aria-live="polite" className={'status ' + state.s}>
-        {state.s === 'ok' && <CheckCircle2 size={18} />}
-        {state.s === 'bad' && <AlertCircle size={18} />}
-        {state.m}
-      </p>
+
+      {state.s === 'bad' && (
+        <div className="full" style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '1rem', borderRadius: '12px', marginTop: '.5rem' }}>
+          <p role="status" aria-live="polite" className="status bad" style={{ color: '#b91c1c', margin: 0, display: 'flex', alignItems: 'center', gap: '.5rem', fontWeight: 600 }}>
+            <AlertCircle size={18} />
+            <span>Could not deliver through server. Click below to send directly via Gmail:</span>
+          </p>
+          <a
+            className="btn sm"
+            href={gmailUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ marginTop: '.75rem', display: 'inline-flex', alignItems: 'center', gap: '.5rem', background: '#dc2626' }}
+          >
+            <Mail size={16} /> Open in Gmail with your details ↗
+          </a>
+        </div>
+      )}
+
+      {state.s === 'ok' && (
+        <p role="status" aria-live="polite" className="status ok full" style={{ color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: '.5rem', fontWeight: 600 }}>
+          <CheckCircle2 size={18} />
+          {state.m}
+        </p>
+      )}
     </form>
   )
 }

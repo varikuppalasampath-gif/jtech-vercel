@@ -26,31 +26,51 @@ export default async function handler(req, res) {
   const d = parsed.data
   if (d.website) return res.json({ ok: true })
 
-  const {
-    SMTP_HOST = 'smtp.hostinger.com',
-    SMTP_PORT = 465,
-    SMTP_USER = 'info@jtech-ai.com',
-    SMTP_PASS = 'Jtech@1981',
-    MAIL_TO = 'info@jtech-ai.com',
-  } = process.env
+  // Force Hostinger if old GoDaddy host or empty
+  let host = process.env.SMTP_HOST || 'smtp.hostinger.com'
+  if (host.includes('secureserver') || !host) {
+    host = 'smtp.hostinger.com'
+  }
+  const port = Number(process.env.SMTP_PORT) || 465
+  const user = process.env.SMTP_USER || 'info@jtech-ai.com'
+  const pass = process.env.SMTP_PASS || 'Jtech@1981'
+  const mailTo = process.env.MAIL_TO || 'info@jtech-ai.com'
+
+  const bodyText = `New Enquiry from Jtech Website\n\n` +
+    `Name: ${d.name}\n` +
+    `Company: ${d.company || 'Not specified'}\n` +
+    `Email: ${d.email}\n` +
+    `Phone: ${d.phone || 'Not specified'}\n` +
+    `Topic: ${d.topic}\n\n` +
+    `Project Details:\n${d.message}\n`
 
   try {
     const t = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT) || 465,
-      secure: Number(SMTP_PORT || 465) === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
     })
+
     await t.sendMail({
-      from: `"Jtech Website Enquiry" <${SMTP_USER}>`,
-      to: MAIL_TO,
+      from: `"Jtech Website" <${user}>`,
+      to: mailTo,
       replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`,
-      subject: `Website enquiry: ${d.topic}`,
-      text: `Name: ${d.name}\nCompany: ${d.company}\nEmail: ${d.email}\nPhone: ${d.phone}\nInterest: ${d.topic}\n\n${d.message}\n`,
+      subject: `Website enquiry: ${d.topic} - ${d.name}`,
+      text: bodyText,
     })
-    res.json({ ok: true })
+
+    return res.json({ ok: true })
   } catch (e) {
-    console.error('Enquiry failed:', e.message)
-    res.status(500).json({ ok: false, error: 'Could not send. Please email info@jtech-ai.com.' })
+    console.error('Enquiry SMTP failed:', e.message)
+    return res.status(500).json({
+      ok: false,
+      error: 'Could not send enquiry through server.',
+      detail: e.message,
+    })
   }
 }
