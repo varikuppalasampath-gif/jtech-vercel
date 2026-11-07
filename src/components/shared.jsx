@@ -54,6 +54,9 @@ export function About() {
   )
 }
 
+const MAPS_EMBED = 'https://maps.google.com/maps?q=17.4602748,78.642963&z=17&output=embed'
+const MAPS_LINK  = 'https://www.google.com/maps/place/JTECH+Mechatronics+and+AI+Solutions+Pvt.Ltd./@17.4602748,78.642963,17z'
+
 export function ContactSection({ topic, setTopic }) {
   return (
     <section className="sec contact">
@@ -64,12 +67,33 @@ export function ContactSection({ topic, setTopic }) {
         </motion.div>
         <div className="cgrid">
           <div className="cinfo">
-            <a href="mailto:info@jtech-ai.com"><Mail /><span><small>Email</small>info@jtech-ai.com</span></a>
+            <a href="https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com" target="_blank" rel="noopener noreferrer"><Mail /><span><small>Email</small>info@jtech-ai.com</span></a>
             <a href={`tel:${PHONE}`}><Phone /><span><small>Phone</small>+91 77806 46425</span></a>
-            <div><MapPin /><span><small>Registered address</small>Plot No. 292, Srinivasa Nagar,<br />Rampally, Hyderabad – 501 301</span></div>
+            <a href={MAPS_LINK} target="_blank" rel="noopener noreferrer"><MapPin /><span><small>Registered address</small>Plot No. 292, Srinivasa Nagar,<br />Rampally, Hyderabad – 501 301</span></a>
           </div>
           <Enquiry topic={topic} setTopic={setTopic} />
         </div>
+
+        {/* Google Maps embed — clicking opens the location in Google Maps */}
+        <motion.div className="map-wrap" {...rise}>
+          <iframe
+            src={MAPS_EMBED}
+            title="Jtech Mechatronics and AI Solutions — location map"
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            aria-label="Map showing Jtech office location in Rampally, Hyderabad"
+          />
+          <a
+            className="map-overlay"
+            href={MAPS_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open Jtech location in Google Maps"
+          />
+          <span className="map-badge">
+            <MapPin size={14} /> Open in Google Maps ↗
+          </span>
+        </motion.div>
       </div>
     </section>
   )
