@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Send, CheckCircle2, AlertCircle, Mail } from 'lucide-react'
-import { SERVICES } from '../constants.js'
+import { SERVICES, handleEmailClick } from '../constants.js'
 
 function InputField({ id, label, type = 'text', auto, full, value, onChange, error }) {
   return (
@@ -36,9 +36,9 @@ export default function Enquiry({ topic, setTopic }) {
     }
   }
 
-  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com&su=${encodeURIComponent(`Website enquiry: ${topic}`)}&body=${encodeURIComponent(
-    `Name: ${v.name || ''}\nCompany: ${v.company || ''}\nEmail: ${v.email || ''}\nPhone: ${v.phone || ''}\nInterest: ${topic}\n\nProject details:\n${v.message || ''}`
-  )}`
+  const emailSubject = `Website enquiry: ${topic}`
+  const emailBody = `Name: ${v.name || ''}\nCompany: ${v.company || ''}\nEmail: ${v.email || ''}\nPhone: ${v.phone || ''}\nInterest: ${topic}\n\nProject details:\n${v.message || ''}`
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`
 
   async function submit(e) {
     e.preventDefault()
@@ -133,6 +133,7 @@ export default function Enquiry({ topic, setTopic }) {
           href={gmailUrl}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={e => handleEmailClick(e, emailSubject, emailBody)}
           className="send-gmail-alt"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.9rem', color: 'var(--navy)', textDecoration: 'none', fontWeight: 500 }}
         >
@@ -151,6 +152,7 @@ export default function Enquiry({ topic, setTopic }) {
             href={gmailUrl}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={e => handleEmailClick(e, emailSubject, emailBody)}
             style={{ marginTop: '.75rem', display: 'inline-flex', alignItems: 'center', gap: '.5rem', background: '#dc2626' }}
           >
             <Mail size={16} /> Open in Gmail with your details ↗

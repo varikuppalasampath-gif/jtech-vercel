@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { Mail } from 'lucide-react'
 import PageHead from '../components/PageHead.jsx'
-import { ROLES, rise } from '../constants.js'
+import { ROLES, rise, handleEmailClick } from '../constants.js'
 
 export default function Careers() {
   return (
@@ -24,6 +24,7 @@ export default function Careers() {
               href="https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com&su=Career%20application"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => handleEmailClick(e, 'Career application')}
             >
               <Mail size={18} /> info@jtech-ai.com
             </a>

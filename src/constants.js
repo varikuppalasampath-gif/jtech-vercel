@@ -94,3 +94,17 @@ export const rise = {
   transition: { duration: 0.55 },
 }
 
+/**
+ * Smart email handler:
+ * - On Mobile (Android/iOS): triggers mailto: to launch the native Gmail / Mail app directly.
+ * - On Desktop: lets the default href (https://mail.google.com/...) open Gmail web in a new tab.
+ */
+export function handleEmailClick(e, subject = 'Project Enquiry to Jtech', body = '') {
+  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  if (isMobile) {
+    if (e && e.preventDefault) e.preventDefault()
+    const url = `mailto:info@jtech-ai.com?subject=${encodeURIComponent(subject)}${body ? `&body=${encodeURIComponent(body)}` : ''}`
+    window.location.href = url
+  }
+}
+

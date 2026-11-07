@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { Mail, Phone, MapPin } from 'lucide-react'
-import { STEPS, AUDIENCE, PHONE, rise } from '../constants.js'
+import { STEPS, AUDIENCE, PHONE, rise, handleEmailClick } from '../constants.js'
 import Enquiry from './Enquiry.jsx'
 
 export function Approach() {
@@ -67,7 +67,12 @@ export function ContactSection({ topic, setTopic }) {
         </motion.div>
         <div className="cgrid">
           <div className="cinfo">
-            <a href="https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com" target="_blank" rel="noopener noreferrer">
+            <a
+              href="https://mail.google.com/mail/?view=cm&to=info@jtech-ai.com&su=Project%20Enquiry%20to%20Jtech"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => handleEmailClick(e, 'Project Enquiry to Jtech')}
+            >
               <Mail /><span><small>Email</small>info@jtech-ai.com</span>
             </a>
             <a href={`tel:${PHONE}`}>
