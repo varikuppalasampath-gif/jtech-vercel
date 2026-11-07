@@ -2,11 +2,39 @@ import { useState } from 'react'
 import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
 import { SERVICES } from '../constants.js'
 
+function InputField({ id, label, type = 'text', auto, full, value, onChange, error }) {
+  return (
+    <div className={'f' + (full ? ' full' : '')}>
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type={type}
+        autoComplete={auto}
+        value={value}
+        onChange={onChange}
+        aria-invalid={!!error}
+      />
+      {error && <span className="err">{error}</span>}
+    </div>
+  )
+}
+
 export default function Enquiry({ topic, setTopic }) {
   const [v, setV] = useState({ name: '', company: '', email: '', phone: '', message: '', website: '' })
   const [err, setErr] = useState({})
   const [state, setState] = useState({ s: 'idle', m: '' })
-  const set = k => e => setV({ ...v, [k]: e.target.value })
+
+  const set = k => e => {
+    const val = e.target.value
+    setV(prev => ({ ...prev, [k]: val }))
+    if (err[k]) {
+      setErr(prev => {
+        const next = { ...prev }
+        delete next[k]
+        return next
+      })
+    }
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -28,20 +56,42 @@ export default function Enquiry({ topic, setTopic }) {
     }
   }
 
-  const F = ({ k, label, type = 'text', auto, full }) => (
-    <div className={'f' + (full ? ' full' : '')}>
-      <label htmlFor={k}>{label}</label>
-      <input id={k} type={type} autoComplete={auto} value={v[k]} onChange={set(k)} aria-invalid={!!err[k]} />
-      {err[k] && <span className="err">{err[k]}</span>}
-    </div>
-  )
-
   return (
     <form onSubmit={submit} noValidate className="form">
-      <F k="name" label="Full name" auto="name" />
-      <F k="company" label="Company" auto="organization" />
-      <F k="email" label="Email" type="email" auto="email" />
-      <F k="phone" label="Phone" type="tel" auto="tel" />
+      <InputField
+        id="name"
+        label="Full name"
+        auto="name"
+        value={v.name}
+        onChange={set('name')}
+        error={err.name}
+      />
+      <InputField
+        id="company"
+        label="Company"
+        auto="organization"
+        value={v.company}
+        onChange={set('company')}
+        error={err.company}
+      />
+      <InputField
+        id="email"
+        label="Email"
+        type="email"
+        auto="email"
+        value={v.email}
+        onChange={set('email')}
+        error={err.email}
+      />
+      <InputField
+        id="phone"
+        label="Phone"
+        type="tel"
+        auto="tel"
+        value={v.phone}
+        onChange={set('phone')}
+        error={err.phone}
+      />
       <div className="f full">
         <label htmlFor="topic">I am interested in</label>
         <select id="topic" value={topic} onChange={e => setTopic(e.target.value)}>
@@ -52,7 +102,13 @@ export default function Enquiry({ topic, setTopic }) {
       </div>
       <div className="f full">
         <label htmlFor="message">Project details</label>
-        <textarea id="message" rows="5" value={v.message} onChange={set('message')} aria-invalid={!!err.message} />
+        <textarea
+          id="message"
+          rows="5"
+          value={v.message}
+          onChange={set('message')}
+          aria-invalid={!!err.message}
+        />
         {err.message && <span className="err">{err.message}</span>}
       </div>
       <input className="hp" tabIndex="-1" autoComplete="off" aria-hidden="true" value={v.website} onChange={set('website')} />
@@ -69,4 +125,3 @@ export default function Enquiry({ topic, setTopic }) {
     </form>
   )
 }
-
