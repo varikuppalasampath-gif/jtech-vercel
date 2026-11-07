@@ -12,7 +12,7 @@ import Careers from './pages/Careers.jsx'
 import Contact from './pages/Contact.jsx'
 import PageHead from './components/PageHead.jsx'
 
-import { PHONE, NAV, TITLES } from './constants.js'
+import { PHONE, NAV, PAGE_METADATA } from './constants.js'
 
 function Shell() {
   const [open, setOpen] = useState(false)
@@ -23,7 +23,24 @@ function Shell() {
   useEffect(() => {
     setOpen(false)
     scrollTo(0, 0)
-    document.title = TITLES[pathname] || TITLES['/']
+    const meta = PAGE_METADATA[pathname] || PAGE_METADATA['/']
+    document.title = meta.title
+
+    // Update meta tags dynamically on client-side route navigation
+    const metaDesc = document.querySelector('meta[name="description"]')
+    if (metaDesc) metaDesc.setAttribute('content', meta.description)
+
+    const canonical = document.querySelector('link[rel="canonical"]')
+    if (canonical) canonical.setAttribute('href', meta.canonical)
+
+    const ogTitle = document.querySelector('meta[property="og:title"]')
+    if (ogTitle) ogTitle.setAttribute('content', meta.title)
+
+    const ogDesc = document.querySelector('meta[property="og:description"]')
+    if (ogDesc) ogDesc.setAttribute('content', meta.description)
+
+    const ogUrl = document.querySelector('meta[property="og:url"]')
+    if (ogUrl) ogUrl.setAttribute('content', meta.canonical)
   }, [pathname])
 
   useEffect(() => {
