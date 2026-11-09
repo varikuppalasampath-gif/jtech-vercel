@@ -11,6 +11,7 @@ import Projects from './pages/Projects.jsx'
 import Careers from './pages/Careers.jsx'
 import Contact from './pages/Contact.jsx'
 import PageHead from './components/PageHead.jsx'
+import GoogleAnalytics from './components/GoogleAnalytics.jsx'
 
 import { PHONE, NAV, PAGE_METADATA } from './constants.js'
 
@@ -111,5 +112,10 @@ function Shell() {
 }
 
 export default function App() {
-  return <BrowserRouter><Shell /></BrowserRouter>
+  return (
+    <BrowserRouter>
+      <GoogleAnalytics />
+      <Shell />
+    </BrowserRouter>
+  )
 }
