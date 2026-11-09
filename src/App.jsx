@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Link, useLocation } from 'react-router-dom'
-import { Menu, X, MessageCircle } from 'lucide-react'
+import { Menu, X, MessageCircle, Users } from 'lucide-react'
 
 import Home from './pages/Home.jsx'
 import About from './pages/About.jsx'
@@ -15,10 +15,26 @@ import GoogleAnalytics from './components/GoogleAnalytics.jsx'
 
 import { PHONE, NAV, PAGE_METADATA } from './constants.js'
 
+function getOrCreateVisitorId() {
+  try {
+    let id = localStorage.getItem('jtech_visitor_id')
+    if (!id || id.length !== 64 || !/^[a-f0-9]{64}$/i.test(id)) {
+      const bytes = new Uint8Array(32)
+      crypto.getRandomValues(bytes)
+      id = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+      localStorage.setItem('jtech_visitor_id', id)
+    }
+    return id
+  } catch (_) {
+    return '0000000000000000000000000000000000000000000000000000000000000000'
+  }
+}
+
 function Shell() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [topic, setTopic] = useState('Request a quotation')
+  const [visitorStats, setVisitorStats] = useState(null)
   const { pathname } = useLocation()
 
   useEffect(() => {
@@ -42,6 +58,21 @@ function Shell() {
 
     const ogUrl = document.querySelector('meta[property="og:url"]')
     if (ogUrl) ogUrl.setAttribute('content', meta.canonical)
+
+    // Track visitor and fetch updated count from GoDaddy database
+    const vid = getOrCreateVisitorId()
+    fetch('/api/visitors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitor_id: vid, page_path: pathname }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.ok) {
+          setVisitorStats(d)
+        }
+      })
+      .catch(() => {})
   }, [pathname])
 
   useEffect(() => {
@@ -95,6 +126,13 @@ function Shell() {
         <div className="wrap foot">
           <img src="/logo.png" alt="Jtech" width="200" height="45" />
           <span>© {new Date().getFullYear()} Jtech Mechatronics and AI Solutions Pvt. Ltd. All rights reserved.</span>
+          {visitorStats && (
+            <div className="visitor-badge" title={`Today's visitors: ${visitorStats.today_visitors || 1}`}>
+              <span className="live-dot" aria-hidden="true" />
+              <Users size={14} />
+              <span>Visitors: <strong>{(visitorStats.total_visitors || 1).toLocaleString()}</strong></span>
+            </div>
+          )}
         </div>
       </footer>
 

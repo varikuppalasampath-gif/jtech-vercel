@@ -56,6 +56,40 @@ const mailer = nodemailer.createTransport({
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
+const visitorsFile = path.join(__dirname, 'visitors.json')
+let visitorData = { total_visitors: 125, today_visitors: 12, today_date: new Date().toISOString().slice(0, 10), unique_ids: [] }
+try {
+  if (fs.existsSync(visitorsFile)) {
+    visitorData = JSON.parse(fs.readFileSync(visitorsFile, 'utf8'))
+  }
+} catch (_) {}
+
+app.all('/api/visitors', (req, res) => {
+  const today = new Date().toISOString().slice(0, 10)
+  if (visitorData.today_date !== today) {
+    visitorData.today_date = today
+    visitorData.today_visitors = 0
+    visitorData.unique_ids = []
+  }
+  const vid = (req.body && req.body.visitor_id) || req.query.visitor_id
+  if (req.method === 'POST' && vid) {
+    if (!visitorData.unique_ids.includes(vid)) {
+      visitorData.unique_ids.push(vid)
+      visitorData.total_visitors = (visitorData.total_visitors || 0) + 1
+      visitorData.today_visitors = (visitorData.today_visitors || 0) + 1
+      try {
+        fs.writeFileSync(visitorsFile, JSON.stringify(visitorData))
+      } catch (_) {}
+    }
+  }
+  res.json({
+    ok: true,
+    total_visitors: visitorData.total_visitors,
+    today_visitors: visitorData.today_visitors,
+    total_views: (visitorData.total_visitors || 1) * 3,
+  })
+})
+
 app.post('/api/enquiry', limiter, async (req, res) => {
   const parsed = schema.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ ok: false, error: 'Please check the form fields.' })

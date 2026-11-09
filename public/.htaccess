@@ -7,8 +7,9 @@
   # RewriteCond %{HTTPS} off
   # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-  # Route /api/enquiry to PHP script if running on Apache/cPanel
+  # Route API endpoints to PHP scripts if running on Apache/cPanel
   RewriteRule ^api/enquiry/?$ api/enquiry.php [L,QSA]
+  RewriteRule ^api/visitors/?$ api/visitors.php [L,QSA]
 
   # Do not rewrite existing files or directories
   RewriteCond %{REQUEST_FILENAME} -f [OR]
