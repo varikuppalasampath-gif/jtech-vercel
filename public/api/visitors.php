@@ -129,3 +129,4 @@ echo json_encode([
     'today_visitors' => $data['today_visitors'],
     'total_views'    => $data['total_visitors'] * 3,
 ]);
+

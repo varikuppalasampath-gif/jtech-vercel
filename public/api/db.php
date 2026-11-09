@@ -26,3 +26,4 @@ function getDbConnection() {
         return null;
     }
 }
+

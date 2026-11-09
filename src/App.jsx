@@ -72,7 +72,7 @@ function Shell() {
           setVisitorStats(d)
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [pathname])
 
   useEffect(() => {
@@ -106,13 +106,13 @@ function Shell() {
       <main id="main">
         <Routes>
           <Route path="/" element={<Home topic={topic} setTopic={setTopic} />} />
-          <Route path="/about"       element={<About />} />
-          <Route path="/products"    element={<Products setTopic={setTopic} />} />
-          <Route path="/services"    element={<Services setTopic={setTopic} />} />
-          <Route path="/industries"  element={<Industries />} />
-          <Route path="/projects"    element={<Projects />} />
-          <Route path="/careers"     element={<Careers />} />
-          <Route path="/contact"     element={<Contact topic={topic} setTopic={setTopic} />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/products" element={<Products setTopic={setTopic} />} />
+          <Route path="/services" element={<Services setTopic={setTopic} />} />
+          <Route path="/industries" element={<Industries />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/careers" element={<Careers />} />
+          <Route path="/contact" element={<Contact topic={topic} setTopic={setTopic} />} />
           <Route path="*" element={
             <>
               <PageHead title="Page not found" text="That page does not exist." />
