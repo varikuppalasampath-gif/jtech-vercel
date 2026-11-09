@@ -5,7 +5,9 @@ import nodemailer from 'nodemailer'
 import { z } from 'zod'
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import mysql from 'mysql2/promise'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.join(__dirname, '..', 'dist')
@@ -20,6 +22,31 @@ app.use(helmet({
   } },
 }))
 app.use(express.json({ limit: '20kb' }))
+
+// MySQL database connection pool (auto-configured via GoDaddy secrets or environment variables)
+let db = null
+if (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER) {
+  try {
+    db = mysql.createPool({
+      host: process.env.DB_HOST,
+      port: Number(process.env.DB_PORT || '3306'),
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD || process.env.DB_PASS || '',
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+    })
+    console.log(`✓ Attached GoDaddy MySQL database: ${process.env.DB_NAME} on ${process.env.DB_HOST}:${process.env.DB_PORT || 3306}`)
+  } catch (err) {
+    console.error('MySQL pool initialization error:', err.message)
+    db = null
+  }
+} else {
+  console.log('ℹ No DB_HOST/DB_NAME detected in environment; using fallback file storage for visitor analytics.')
+}
 
 const schema = z.object({
   name: z.string().trim().min(2).max(100),
@@ -64,17 +91,64 @@ try {
   }
 } catch (_) {}
 
-app.all('/api/visitors', (req, res) => {
+app.all('/api/visitors', async (req, res) => {
+  const vid = (req.body && req.body.visitor_id) || req.query.visitor_id
+  const pagePath = (req.body && req.body.page_path) || req.query.page_path || '/'
+
+  let cleanVid = vid ? String(vid).trim() : ''
+  if (cleanVid) {
+    if (!/^[a-f0-9]{64}$/i.test(cleanVid)) {
+      cleanVid = crypto.createHash('sha256').update(cleanVid).digest('hex')
+    }
+  } else if (req.method === 'POST') {
+    cleanVid = crypto.createHash('sha256').update((req.ip || '') + (req.headers['user-agent'] || '')).digest('hex')
+  }
+
+  // Record in GoDaddy MySQL database if connected
+  if (db) {
+    try {
+      if (req.method === 'POST' && cleanVid) {
+        await db.query(
+          'INSERT INTO visitor_events (visitor_id, page_path, visited_at) VALUES (?, ?, NOW())',
+          [cleanVid, pagePath.slice(0, 255)]
+        )
+        await db.query(
+          'INSERT IGNORE INTO unique_visitors_daily (visitor_id, visit_date, first_seen_at) VALUES (?, CURDATE(), NOW())',
+          [cleanVid]
+        )
+      }
+
+      const [[totalRow]] = await db.query('SELECT COUNT(DISTINCT visitor_id) AS total_visitors FROM unique_visitors_daily')
+      const [[todayRow]] = await db.query('SELECT COUNT(*) AS today_visitors FROM unique_visitors_daily WHERE visit_date = CURDATE()')
+      const [[viewsRow]] = await db.query('SELECT COUNT(*) AS total_views FROM visitor_events')
+
+      const total_visitors = Number(totalRow?.total_visitors || 0)
+      const today_visitors = Number(todayRow?.today_visitors || 0)
+      const total_views = Number(viewsRow?.total_views || 0)
+
+      return res.json({
+        ok: true,
+        source: 'database',
+        total_visitors: Math.max(1, total_visitors),
+        today_visitors: Math.max(1, today_visitors),
+        total_views: Math.max(1, total_views),
+      })
+    } catch (err) {
+      console.error('MySQL visitor query error:', err.message)
+      // fallback to file below if database query fails
+    }
+  }
+
+  // Fallback: local file tracking if database is not active
   const today = new Date().toISOString().slice(0, 10)
   if (visitorData.today_date !== today) {
     visitorData.today_date = today
     visitorData.today_visitors = 0
     visitorData.unique_ids = []
   }
-  const vid = (req.body && req.body.visitor_id) || req.query.visitor_id
-  if (req.method === 'POST' && vid) {
-    if (!visitorData.unique_ids.includes(vid)) {
-      visitorData.unique_ids.push(vid)
+  if (req.method === 'POST' && cleanVid) {
+    if (!visitorData.unique_ids.includes(cleanVid)) {
+      visitorData.unique_ids.push(cleanVid)
       visitorData.total_visitors = (visitorData.total_visitors || 0) + 1
       visitorData.today_visitors = (visitorData.today_visitors || 0) + 1
       try {
@@ -84,6 +158,7 @@ app.all('/api/visitors', (req, res) => {
   }
   res.json({
     ok: true,
+    source: 'local_file',
     total_visitors: visitorData.total_visitors,
     today_visitors: visitorData.today_visitors,
     total_views: (visitorData.total_visitors || 1) * 3,
