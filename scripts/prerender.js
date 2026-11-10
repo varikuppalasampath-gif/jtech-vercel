@@ -96,3 +96,4 @@ try {
 }
 
 console.log('✨ All 8 pages successfully prerendered with full static body content!')
+process.exit(0)
