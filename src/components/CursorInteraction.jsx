@@ -295,3 +295,4 @@ export default function CursorInteraction() {
 
   return <canvas ref={canvasRef} className="cursor-interaction-canvas" aria-hidden="true" />
 }
+
