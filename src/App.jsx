@@ -30,7 +30,7 @@ function getOrCreateVisitorId() {
   }
 }
 
-function Shell() {
+export function Shell() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [topic, setTopic] = useState('Request a quotation')

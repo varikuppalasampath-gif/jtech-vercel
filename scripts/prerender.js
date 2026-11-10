@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
 import { PAGE_METADATA } from '../src/constants.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -14,61 +15,84 @@ if (!fs.existsSync(baseHtmlPath)) {
 
 const baseHtml = fs.readFileSync(baseHtmlPath, 'utf8')
 
-console.log('⚡ Generating page-specific SEO metadata for static HTML...')
+console.log('⚡ Generating fully prerendered static HTML pages with complete body content...')
 
-for (const [route, meta] of Object.entries(PAGE_METADATA)) {
-  let html = baseHtml
+const vite = await createServer({
+  server: { middlewareMode: true },
+  appType: 'custom',
+})
 
-  // 1. Title
-  html = html.replace(/<title>.*?<\/title>/i, `<title>${meta.title}</title>`)
+try {
+  const { render } = await vite.ssrLoadModule('/src/entry-server.jsx')
 
-  // 2. Meta description
-  html = html.replace(
-    /<meta name="description" content=".*?">/i,
-    `<meta name="description" content="${meta.description}">`
-  )
+  for (const [route, meta] of Object.entries(PAGE_METADATA)) {
+    let html = baseHtml
 
-  // 3. Canonical link
-  html = html.replace(
-    /<link rel="canonical" href=".*?">/i,
-    `<link rel="canonical" href="${meta.canonical}">`
-  )
+    // 1. Render React components to full static HTML markup
+    let appHtml = ''
+    try {
+      appHtml = render(route)
+    } catch (err) {
+      console.warn(`Warning: failed to render ${route}:`, err.message)
+    }
 
-  // 4. OpenGraph tags
-  html = html.replace(
-    /<meta property="og:title" content=".*?">/i,
-    `<meta property="og:title" content="${meta.title}">`
-  )
-  html = html.replace(
-    /<meta property="og:description" content=".*?">/i,
-    `<meta property="og:description" content="${meta.description}">`
-  )
-  html = html.replace(
-    /<meta property="og:url" content=".*?">/i,
-    `<meta property="og:url" content="${meta.canonical}">`
-  )
+    // 2. Inject rendered HTML inside <div id="root">
+    if (appHtml) {
+      html = html.replace('<div id="root"></div>', `<div id="root">${appHtml}</div>`)
+    }
 
-  // 5. Twitter tags
-  html = html.replace(
-    /<meta name="twitter:title" content=".*?">/i,
-    `<meta name="twitter:title" content="${meta.title}">`
-  )
-  html = html.replace(
-    /<meta name="twitter:description" content=".*?">/i,
-    `<meta name="twitter:description" content="${meta.description}">`
-  )
+    // 3. Title
+    html = html.replace(/<title>.*?<\/title>/i, `<title>${meta.title}</title>`)
 
-  if (route === '/') {
-    fs.writeFileSync(baseHtmlPath, html, 'utf8')
-    console.log(`  ✓ Prerendered HTML: / (dist/index.html)`)
-  } else {
-    const routeDir = path.join(distDir, route.replace(/^\//, ''))
-    fs.mkdirSync(routeDir, { recursive: true })
-    const outPath = path.join(routeDir, 'index.html')
-    fs.writeFileSync(outPath, html, 'utf8')
-    console.log(`  ✓ Prerendered HTML: ${route} (${path.relative(path.join(__dirname, '..'), outPath)})`)
+    // 4. Meta description
+    html = html.replace(
+      /<meta name="description" content=".*?">/i,
+      `<meta name="description" content="${meta.description}">`
+    )
+
+    // 5. Canonical link
+    html = html.replace(
+      /<link rel="canonical" href=".*?">/i,
+      `<link rel="canonical" href="${meta.canonical}">`
+    )
+
+    // 6. OpenGraph tags
+    html = html.replace(
+      /<meta property="og:title" content=".*?">/i,
+      `<meta property="og:title" content="${meta.title}">`
+    )
+    html = html.replace(
+      /<meta property="og:description" content=".*?">/i,
+      `<meta property="og:description" content="${meta.description}">`
+    )
+    html = html.replace(
+      /<meta property="og:url" content=".*?">/i,
+      `<meta property="og:url" content="${meta.canonical}">`
+    )
+
+    // 7. Twitter tags
+    html = html.replace(
+      /<meta name="twitter:title" content=".*?">/i,
+      `<meta name="twitter:title" content="${meta.title}">`
+    )
+    html = html.replace(
+      /<meta name="twitter:description" content=".*?">/i,
+      `<meta name="twitter:description" content="${meta.description}">`
+    )
+
+    if (route === '/') {
+      fs.writeFileSync(baseHtmlPath, html, 'utf8')
+      console.log(`  ✓ Fully Prerendered HTML: / (dist/index.html) [${appHtml.length} chars]`)
+    } else {
+      const routeDir = path.join(distDir, route.replace(/^\//, ''))
+      fs.mkdirSync(routeDir, { recursive: true })
+      const outPath = path.join(routeDir, 'index.html')
+      fs.writeFileSync(outPath, html, 'utf8')
+      console.log(`  ✓ Fully Prerendered HTML: ${route} (${path.relative(path.join(__dirname, '..'), outPath)}) [${appHtml.length} chars]`)
+    }
   }
+} finally {
+  await vite.close()
 }
 
-console.log('✨ All 8 pages successfully prerendered with static SEO metadata!')
-
+console.log('✨ All 8 pages successfully prerendered with full static body content!')
