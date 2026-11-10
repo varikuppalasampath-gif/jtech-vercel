@@ -12,6 +12,7 @@ import Careers from './pages/Careers.jsx'
 import Contact from './pages/Contact.jsx'
 import PageHead from './components/PageHead.jsx'
 import GoogleAnalytics from './components/GoogleAnalytics.jsx'
+import CursorInteraction from './components/CursorInteraction.jsx'
 
 import { PHONE, NAV, PAGE_METADATA } from './constants.js'
 
@@ -79,7 +80,7 @@ export function Shell() {
           setVisitorStats(d)
           try {
             localStorage.setItem('jtech_visitor_stats', JSON.stringify(d))
-          } catch (_) {}
+          } catch (_) { }
         }
       })
       .catch(() => { })
@@ -95,6 +96,7 @@ export function Shell() {
   return (
     <>
       <a className="skip" href="#main">Skip to content</a>
+      <CursorInteraction />
 
       <header className={scrolled ? 'hdr on' : 'hdr'}>
         <div className="wrap nav">
