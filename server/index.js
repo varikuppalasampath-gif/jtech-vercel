@@ -197,8 +197,24 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 })
 
 if (fs.existsSync(dist)) {
-  app.use(express.static(dist, { maxAge: '7d', index: false }))
-  app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
+  app.use(express.static(dist, {
+    maxAge: '1y',
+    immutable: true,
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+        res.setHeader('Pragma', 'no-cache')
+        res.setHeader('Expires', '0')
+      }
+    }
+  }))
+  app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.setHeader('Pragma', 'no-cache')
+    res.setHeader('Expires', '0')
+    res.sendFile(path.join(dist, 'index.html'))
+  })
 }
 const port = process.env.PORT || 3000
 app.listen(port, () => console.log(`Jtech site running on http://localhost:${port}`))
