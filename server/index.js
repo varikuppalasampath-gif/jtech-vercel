@@ -193,10 +193,10 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   const text = `Name: ${d.name}\nCompany: ${d.company}\nEmail: ${d.email}\nPhone: ${d.phone}\nInterest: ${d.topic}\n\n${d.message}\n`
 
   const mailOptions = {
-    from: `"Jtech Website Enquiry" <${SMTP_USER}>`,
+    from: SMTP_USER, // Clean email address for strict anti-spoofing and SPF validation
     to: MAIL_TO,
-    bcc: 'varikuppalaa.sampath@gmail.com', // Direct copy to your Gmail inbox
-    replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`,
+    bcc: 'varikuppalaa.sampath@gmail.com', // Direct copy to your personal Gmail inbox
+    replyTo: d.email,
     subject: `Website enquiry: ${d.topic} - ${d.name}`,
     text,
   }
