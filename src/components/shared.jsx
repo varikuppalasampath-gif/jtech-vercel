@@ -82,11 +82,14 @@ export function ContactSection({ topic, setTopic }) {
               <MapPin /><span><small>Registered address</small>Plot No. 292, Srinivasa Nagar,<br />Rampally, Hyderabad – 501 301</span>
             </a>
 
-            {/* Google Map Card placed directly below registered address */}
-            <div
+            {/* Google Map Card placed directly below registered address: clicking anywhere opens Google Maps */}
+            <a
+              href={MAPS_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
               className="map-card"
-              title="Jtech Mechatronics & AI Solutions Location"
-              aria-label="Jtech Mechatronics location on Google Maps"
+              title="Click to open Jtech in Google Maps"
+              aria-label="Open Jtech Mechatronics location in Google Maps"
             >
               <iframe
                 src={MAPS_EMBED}
@@ -94,7 +97,7 @@ export function ContactSection({ topic, setTopic }) {
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
               />
-            </div>
+            </a>
           </div>
           <Enquiry topic={topic} setTopic={setTopic} />
         </div>
