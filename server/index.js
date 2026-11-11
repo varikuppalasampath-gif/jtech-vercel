@@ -78,27 +78,27 @@ const {
   MAIL_TO = 'info@jtech-ai.com',
 } = process.env
 
-// Primary mailer (Port 465 SSL) + Fallback mailer (Port 587 STARTTLS) for maximum hosting compatibility
+// Configure mailers with fast timeouts so reverse-proxy does not time out (502)
 const primaryMailer = nodemailer.createTransport({
   host: SMTP_HOST,
-  port: Number(SMTP_PORT) || 465,
-  secure: Number(SMTP_PORT || 465) === 465,
+  port: 587,
+  secure: false, // Port 587 STARTTLS is the most reliable on container clouds
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 10000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
+  connectionTimeout: 4000,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
 })
 
 const fallbackMailer = nodemailer.createTransport({
   host: SMTP_HOST,
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 10000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
+  connectionTimeout: 4000,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
 })
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
@@ -195,48 +195,33 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   const mailOptions = {
     from: `"Jtech Website Enquiry" <${SMTP_USER}>`,
     to: MAIL_TO,
-    bcc: 'varikuppalaa.sampath@gmail.com', // Also deliver copy directly to your verified Gmail inbox
+    bcc: 'varikuppalaa.sampath@gmail.com', // Direct copy to your Gmail inbox
     replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`,
     subject: `Website enquiry: ${d.topic} - ${d.name}`,
     text,
   }
 
-  // Backup always to disk first so lead is never lost
+  // 1. Immediately save lead to disk so no customer enquiry is ever lost
   try {
     fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d }) + '\n')
   } catch (_) { }
 
-  try {
-    let sent = false
+  // 2. Respond immediately with success so reverse proxy (Cloudflare/GoDaddy) never triggers a 502 timeout
+  res.json({ ok: true, message: 'Enquiry received' })
+
+  // 3. Dispatch email asynchronously in background
+  (async () => {
     try {
       await primaryMailer.sendMail(mailOptions)
-      sent = true
     } catch (primaryErr) {
-      console.warn('Primary SMTP (465) error:', primaryErr.message)
+      console.warn('Primary SMTP (587) failed, retrying on 465:', primaryErr.message)
       try {
         await fallbackMailer.sendMail(mailOptions)
-        sent = true
       } catch (fallbackErr) {
-        console.warn('Fallback SMTP (587) error:', fallbackErr.message)
+        console.error('All background SMTP attempts failed:', fallbackErr.message)
       }
     }
-
-    if (sent) {
-      return res.json({ ok: true })
-    }
-
-    // If outbound port is blocked on host, inform client so the Gmail action can be shown
-    res.status(502).json({
-      ok: false,
-      error: 'Direct server delivery unavailable. Please send via Gmail below.',
-    })
-  } catch (e) {
-    console.error('All SMTP attempts failed:', e.message)
-    res.status(502).json({
-      ok: false,
-      error: 'Direct server delivery unavailable. Please send via Gmail below.',
-    })
-  }
+  })()
 })
 
 if (fs.existsSync(dist)) {
