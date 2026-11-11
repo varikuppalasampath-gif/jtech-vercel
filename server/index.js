@@ -203,26 +203,28 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 
   // 1. Immediately save lead to disk so no customer enquiry is ever lost
   try {
-    fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d }) + '\n')
+    fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d }) + '\n');
   } catch (_) { }
 
-  // 2. Respond immediately with success so reverse proxy (Cloudflare/GoDaddy) never triggers a 502 timeout
-  res.json({ ok: true, message: 'Enquiry received' })
+  // 2. Respond immediately with success so reverse proxy (Cloudflare/GoDaddy) never triggers a timeout
+  res.json({ ok: true, message: 'Enquiry received' });
 
-  // 3. Dispatch email asynchronously in background
-  (async () => {
+  // 3. Dispatch email asynchronously in background via named function
+  sendEnquiryNotification(mailOptions);
+});
+
+async function sendEnquiryNotification(mailOptions) {
+  try {
+    await primaryMailer.sendMail(mailOptions);
+  } catch (primaryErr) {
+    console.warn('Primary SMTP (587) failed, retrying on 465:', primaryErr.message);
     try {
-      await primaryMailer.sendMail(mailOptions)
-    } catch (primaryErr) {
-      console.warn('Primary SMTP (587) failed, retrying on 465:', primaryErr.message)
-      try {
-        await fallbackMailer.sendMail(mailOptions)
-      } catch (fallbackErr) {
-        console.error('All background SMTP attempts failed:', fallbackErr.message)
-      }
+      await fallbackMailer.sendMail(mailOptions);
+    } catch (fallbackErr) {
+      console.error('All background SMTP attempts failed:', fallbackErr.message);
     }
-  })()
-})
+  }
+}
 
 if (fs.existsSync(dist)) {
   app.use(express.static(dist, {
@@ -244,5 +246,15 @@ if (fs.existsSync(dist)) {
     res.sendFile(path.join(dist, 'index.html'))
   })
 }
-const port = process.env.PORT || 3000
-app.listen(port, () => console.log(`Jtech site running on port ${port}`))
+const port = Number(process.env.PORT) || 3000;
+const host = '0.0.0.0';
+app.listen(port, host, () => console.log(`Jtech site running on http://${host}:${port}`));
+
+// Process safety: prevent unhandled errors from terminating Node.js
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
