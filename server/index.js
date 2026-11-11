@@ -15,10 +15,12 @@ const app = express()
 app.set('trust proxy', 1)
 app.use(helmet({
   contentSecurityPolicy: { directives: {
-    defaultSrc: ["'self'"], scriptSrc: ["'self'", "'unsafe-inline'"],
+    defaultSrc: ["'self'"], scriptSrc: ["'self'", "'unsafe-inline'", 'https://www.googletagmanager.com', 'https://www.google-analytics.com'],
     styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
     fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-    imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"],
+    imgSrc: ["'self'", 'data:', 'https://www.google.com', 'https://maps.gstatic.com', 'https://maps.googleapis.com'],
+    connectSrc: ["'self'", 'https://www.google-analytics.com', 'https://analytics.google.com'],
+    frameSrc: ["'self'", 'https://www.google.com', 'https://maps.google.com'],
   } },
 }))
 app.use(express.json({ limit: '20kb' }))

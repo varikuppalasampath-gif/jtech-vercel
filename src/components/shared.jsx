@@ -55,7 +55,7 @@ export function About() {
 }
 
 const MAPS_LINK = 'https://www.google.com/maps/place/JTECH+Mechatronics+and+AI+Solutions+Pvt.Ltd./@17.4602994,78.6411545,740m/data=!3m1!1e3!4m6!3m5!1s0x3bcb9dce125c586b:0xd4c48f6eddaa4a60!8m2!3d17.4602748!4d78.642963!16s%2Fg%2F11nt_dds7s?authuser=0&entry=ttu'
-const MAPS_EMBED = 'https://maps.google.com/maps?q=17.4602748,78.642963+(JTECH+Mechatronics+and+AI+Solutions+Pvt.Ltd.)&t=&z=16&ie=UTF8&iwloc=B&output=embed'
+const MAPS_EMBED = 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d951.8!2d78.642963!3d17.4602748!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bcb9dce125c586b%3A0xd4c48f6eddaa4a60!2sJTECH%20Mechatronics%20and%20AI%20Solutions%20Pvt.Ltd.!5e0!3m2!1sen!2sin!4v1699999999999!5m2!1sen!2sin'
 
 export function ContactSection({ topic, setTopic }) {
   return (
