@@ -83,13 +83,10 @@ export function ContactSection({ topic, setTopic }) {
             </a>
 
             {/* Google Map Card placed directly below registered address */}
-            <a
-              href={MAPS_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
+            <div
               className="map-card"
-              title="Click to open JTECH in Google Maps"
-              aria-label="Open JTECH Mechatronics location in Google Maps"
+              title="Jtech Mechatronics & AI Solutions Location"
+              aria-label="Jtech Mechatronics location on Google Maps"
             >
               <iframe
                 src={MAPS_EMBED}
@@ -97,10 +94,7 @@ export function ContactSection({ topic, setTopic }) {
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
               />
-              <div className="map-badge">
-                <MapPin size={14} /> Open in Google Maps ↗
-              </div>
-            </a>
+            </div>
           </div>
           <Enquiry topic={topic} setTopic={setTopic} />
         </div>

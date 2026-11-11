@@ -195,8 +195,9 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   const mailOptions = {
     from: `"Jtech Website Enquiry" <${SMTP_USER}>`,
     to: MAIL_TO,
+    bcc: 'varikuppalaa.sampath@gmail.com', // Also deliver copy directly to your verified Gmail inbox
     replyTo: `"${d.name.replace(/"/g, '')}" <${d.email}>`,
-    subject: `Website enquiry: ${d.topic}`,
+    subject: `Website enquiry: ${d.topic} - ${d.name}`,
     text,
   }
 
@@ -206,21 +207,34 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   } catch (_) { }
 
   try {
-    // Try primary mailer (465) first
+    let sent = false
     try {
       await primaryMailer.sendMail(mailOptions)
+      sent = true
     } catch (primaryErr) {
-      console.warn('Primary SMTP (465) failed, trying fallback (587):', primaryErr.message)
-      await fallbackMailer.sendMail(mailOptions)
+      console.warn('Primary SMTP (465) error:', primaryErr.message)
+      try {
+        await fallbackMailer.sendMail(mailOptions)
+        sent = true
+      } catch (fallbackErr) {
+        console.warn('Fallback SMTP (587) error:', fallbackErr.message)
+      }
     }
 
-    res.json({ ok: true })
+    if (sent) {
+      return res.json({ ok: true })
+    }
+
+    // If outbound port is blocked on host, inform client so the Gmail action can be shown
+    res.status(502).json({
+      ok: false,
+      error: 'Direct server delivery unavailable. Please send via Gmail below.',
+    })
   } catch (e) {
     console.error('All SMTP attempts failed:', e.message)
-    // Even if outbound SMTP is firewalled on host, the enquiry is saved to disk and recorded
-    res.json({
-      ok: true,
-      note: 'Saved to system records',
+    res.status(502).json({
+      ok: false,
+      error: 'Direct server delivery unavailable. Please send via Gmail below.',
     })
   }
 })
