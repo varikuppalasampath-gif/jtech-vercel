@@ -244,6 +244,5 @@ if (fs.existsSync(dist)) {
     res.sendFile(path.join(dist, 'index.html'))
   })
 }
-const port = Number(process.env.PORT) || 3000
-const host = '0.0.0.0'
-app.listen(port, host, () => console.log(`Jtech site running on http://${host}:${port}`))
+const port = process.env.PORT || 3000
+app.listen(port, () => console.log(`Jtech site running on port ${port}`))
