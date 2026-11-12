@@ -44,6 +44,19 @@ if (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER) {
       keepAliveInitialDelay: 10000,
     })
     console.log(`✓ Attached GoDaddy MySQL database: ${process.env.DB_NAME} on ${process.env.DB_HOST}:${process.env.DB_PORT || 3306}`)
+    // Ensure enquiries table exists in GoDaddy MySQL database
+    db.query(`
+      CREATE TABLE IF NOT EXISTS enquiries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        company VARCHAR(120),
+        email VARCHAR(120) NOT NULL,
+        phone VARCHAR(30),
+        topic VARCHAR(80),
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(err => console.error('Enquiries table init error:', err.message))
   } catch (err) {
     console.error('MySQL pool initialization error:', err.message)
     db = null
@@ -109,6 +122,18 @@ const fallbackMailer = nodemailer.createTransport({
   connectionTimeout: 20000,
   greetingTimeout: 15000,
   socketTimeout: 30000,
+})
+
+// GoDaddy internal relay mailer (for GoDaddy shared & container networks)
+const godaddyRelayMailer = nodemailer.createTransport({
+  host: 'relay-hosting.secureserver.net',
+  port: 25,
+  secure: false,
+  auth: false,
+  tls: { rejectUnauthorized: false },
+  connectionTimeout: 8000,
+  greetingTimeout: 8000,
+  socketTimeout: 10000,
 })
 
 app.get('/api/health', (_req, res) => res.json({
@@ -232,7 +257,13 @@ app.post('/api/enquiry', limiter, async (req, res) => {
     html,
   }
 
-  // 1. Immediately save lead to disk so no customer enquiry is ever lost
+  // 1. Immediately save lead to MySQL database and local disk so no customer enquiry is ever lost
+  if (db) {
+    db.query(
+      'INSERT INTO enquiries (name, company, email, phone, topic, message) VALUES (?, ?, ?, ?, ?, ?)',
+      [d.name, d.company || '', d.email, d.phone || '', d.topic || '', d.message]
+    ).catch(err => console.error('Enquiries DB insert error:', err.message));
+  }
   try {
     fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d }) + '\n');
   } catch (_) { }
@@ -240,27 +271,133 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   // 2. Respond immediately with success so reverse proxy (Cloudflare/GoDaddy) never triggers a timeout
   res.json({ ok: true, message: 'Enquiry received' });
 
-  // 3. Dispatch email asynchronously in background via named function
+  // 3. Dispatch email asynchronously in background with multi-tier fallback
   sendEnquiryNotification(mailOptions);
 });
 
 async function sendEnquiryNotification(mailOptions) {
+  // Tier 1: Resend HTTPS API (Port 443 - immune to container port blocks)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'Jtech Enquiries <onboarding@resend.dev>',
+          to: ['info@jtech-ai.com', 'varikuppalaa.sampath@gmail.com'],
+          reply_to: mailOptions.replyTo,
+          subject: mailOptions.subject,
+          text: mailOptions.text,
+          html: mailOptions.html,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-resend', id: data.id };
+        console.log('Enquiry email sent via Resend HTTPS (443):', data.id);
+        return;
+      }
+      console.warn('Resend HTTPS returned non-ok status:', res.status);
+    } catch (e) {
+      console.warn('Resend HTTPS send failed:', e.message);
+    }
+  }
+
+  // Tier 2: Brevo HTTPS API (Port 443)
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'Jtech Enquiries', email: 'info@jtech-ai.com' },
+          to: [{ email: 'info@jtech-ai.com' }, { email: 'varikuppalaa.sampath@gmail.com' }],
+          replyTo: { email: mailOptions.replyTo },
+          subject: mailOptions.subject,
+          textContent: mailOptions.text,
+          htmlContent: mailOptions.html,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-brevo', id: data.messageId };
+        console.log('Enquiry email sent via Brevo HTTPS (443):', data.messageId);
+        return;
+      }
+      console.warn('Brevo HTTPS returned non-ok status:', res.status);
+    } catch (e) {
+      console.warn('Brevo HTTPS send failed:', e.message);
+    }
+  }
+
+  // Tier 3: Primary Hostinger SMTP (Port 587 STARTTLS)
   try {
     const info = await primaryMailer.sendMail(mailOptions);
     lastMailStatus = { at: new Date().toISOString(), ok: true, method: '587-STARTTLS', id: info.messageId };
     console.log('Enquiry email sent via primary SMTP (587):', info.messageId);
+    return;
   } catch (primaryErr) {
-    console.warn('Primary SMTP (587) failed, retrying on 465:', primaryErr.message);
+    console.warn('Primary SMTP (587) failed:', primaryErr.message);
+
+    // Tier 4: Fallback Hostinger SMTP (Port 465 SSL)
     try {
       const info = await fallbackMailer.sendMail(mailOptions);
       lastMailStatus = { at: new Date().toISOString(), ok: true, method: '465-SSL', id: info.messageId };
       console.log('Enquiry email sent via fallback SMTP (465):', info.messageId);
+      return;
     } catch (fallbackErr) {
-      lastMailStatus = { at: new Date().toISOString(), ok: false, primaryErr: primaryErr.message, fallbackErr: fallbackErr.message };
-      console.error('All background SMTP attempts failed:', fallbackErr.message);
+      console.warn('Fallback SMTP (465) failed:', fallbackErr.message);
+
+      // Tier 5: GoDaddy internal hosting relay (Port 25)
+      try {
+        const info = await godaddyRelayMailer.sendMail(mailOptions);
+        lastMailStatus = { at: new Date().toISOString(), ok: true, method: '25-GoDaddyRelay', id: info.messageId };
+        console.log('Enquiry email sent via GoDaddy internal relay (25):', info.messageId);
+        return;
+      } catch (relayErr) {
+        lastMailStatus = {
+          at: new Date().toISOString(),
+          ok: false,
+          primaryErr: primaryErr.message,
+          fallbackErr: fallbackErr.message,
+          relayErr: relayErr.message,
+          hint: 'GoDaddy container firewall blocks raw SMTP ports 25, 465, 587. Configure RESEND_API_KEY or BREVO_API_KEY in GoDaddy environment variables to deliver via HTTPS Port 443.'
+        };
+        console.error('All background mail dispatch attempts failed. SMTP ports blocked by container firewall.');
+      }
     }
   }
 }
+
+// Protected admin endpoint to view all captured leads from GoDaddy MySQL or file
+app.get('/api/admin/enquiries', async (req, res) => {
+  const token = req.query.key || req.headers['x-admin-key'];
+  if (token !== (process.env.ADMIN_KEY || 'jtech2026')) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized. Use ?key=jtech2026' });
+  }
+  if (db) {
+    try {
+      const [rows] = await db.query('SELECT * FROM enquiries ORDER BY id DESC LIMIT 100');
+      return res.json({ ok: true, source: 'database', count: rows.length, enquiries: rows });
+    } catch (e) {
+      console.error('Admin enquiries query error:', e.message);
+    }
+  }
+  try {
+    const file = path.join(__dirname, 'enquiries.jsonl');
+    if (fs.existsSync(file)) {
+      const lines = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      return res.json({ ok: true, source: 'file', count: lines.length, enquiries: lines.reverse() });
+    }
+  } catch (_) {}
+  res.json({ ok: true, source: 'none', count: 0, enquiries: [] });
+});
 
 if (fs.existsSync(dist)) {
   app.use(express.static(dist, {
