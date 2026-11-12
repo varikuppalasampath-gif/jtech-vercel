@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -n api,web -c blue,cyan \"npm:dev:server\" \"npm:dev:client\"",
     "dev:client": "vite",
-    "dev:server": "node --watch server/index.js",
+    "dev:server": "node --watch --watch-path=server/index.js server/index.js",
     "build": "vite build && node scripts/prerender.js",
     "start": "node server/index.js"
   },
