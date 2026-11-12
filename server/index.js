@@ -278,29 +278,50 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 async function sendEnquiryNotification(mailOptions) {
   // Tier 1: Resend HTTPS API (Port 443 - immune to container port blocks)
   if (process.env.RESEND_API_KEY) {
+    const fromAddr = process.env.RESEND_FROM || 'Jtech Enquiries <onboarding@resend.dev>';
+    const toAddrs = process.env.RESEND_TO ? process.env.RESEND_TO.split(',') : ['varikuppalaa.sampath@gmail.com', 'info@jtech-ai.com'];
     try {
-      const res = await fetch('https://api.resend.com/emails', {
+      let res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'Jtech Enquiries <onboarding@resend.dev>',
-          to: ['info@jtech-ai.com', 'varikuppalaa.sampath@gmail.com'],
+          from: fromAddr,
+          to: toAddrs,
           reply_to: mailOptions.replyTo,
           subject: mailOptions.subject,
           text: mailOptions.text,
           html: mailOptions.html,
         }),
       });
+      // If testing domain only permits account owner's email, automatically fallback to Gmail recipient:
+      if (!res.ok) {
+        res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'onboarding@resend.dev',
+            to: ['varikuppalaa.sampath@gmail.com'],
+            reply_to: mailOptions.replyTo,
+            subject: mailOptions.subject,
+            text: mailOptions.text,
+            html: mailOptions.html,
+          }),
+        });
+      }
       if (res.ok) {
         const data = await res.json();
         lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-resend', id: data.id };
         console.log('Enquiry email sent via Resend HTTPS (443):', data.id);
         return;
       }
-      console.warn('Resend HTTPS returned non-ok status:', res.status);
+      const errText = await res.text();
+      console.warn('Resend HTTPS error:', errText);
     } catch (e) {
       console.warn('Resend HTTPS send failed:', e.message);
     }
