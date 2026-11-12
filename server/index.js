@@ -64,10 +64,17 @@ const schema = z.object({
 
 const limiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  limit: 10,
+  limit: 50,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Too many enquiries. Please try again later.' },
+  keyGenerator: (req) => {
+    const cfIp = req.headers['cf-connecting-ip']
+    if (cfIp) return cfIp
+    const forwarded = req.headers['x-forwarded-for']
+    if (forwarded) return forwarded.split(',')[0].trim()
+    return req.ip || '127.0.0.1'
+  },
+  message: { ok: false, error: 'Too many enquiries from this network. Please try again shortly or use the direct Gmail link.' },
 })
 
 const {
@@ -78,30 +85,38 @@ const {
   MAIL_TO = 'info@jtech-ai.com',
 } = process.env
 
-// Configure mailers with fast timeouts so reverse-proxy does not time out (502)
+let lastMailStatus = { at: null, ok: null, method: null, err: null }
+
+// Primary mailer: Port 587 STARTTLS
 const primaryMailer = nodemailer.createTransport({
   host: SMTP_HOST,
   port: 587,
-  secure: false, // Port 587 STARTTLS is the most reliable on container clouds
+  secure: false,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 4000,
-  greetingTimeout: 3000,
-  socketTimeout: 5000,
+  connectionTimeout: 20000,
+  greetingTimeout: 15000,
+  socketTimeout: 30000,
 })
 
+// Fallback mailer: Port 465 SSL
 const fallbackMailer = nodemailer.createTransport({
   host: SMTP_HOST,
   port: 465,
   secure: true,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 4000,
-  greetingTimeout: 3000,
-  socketTimeout: 5000,
+  connectionTimeout: 20000,
+  greetingTimeout: 15000,
+  socketTimeout: 30000,
 })
 
-app.get('/api/health', (_req, res) => res.json({ ok: true }))
+app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  uptime: Math.round(process.uptime()),
+  mail: lastMailStatus,
+  db: db ? 'connected' : 'disabled'
+}))
 
 const visitorsFile = path.join(__dirname, 'visitors.json')
 let visitorData = { total_visitors: 125, today_visitors: 12, today_date: new Date().toISOString().slice(0, 10), unique_ids: [] }
@@ -190,15 +205,31 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   if (!parsed.success) return res.status(422).json({ ok: false, error: 'Please check the form fields.' })
   const d = parsed.data
   if (d.website) return res.json({ ok: true }) // bot: pretend success
-  const text = `Name: ${d.name}\nCompany: ${d.company}\nEmail: ${d.email}\nPhone: ${d.phone}\nInterest: ${d.topic}\n\n${d.message}\n`
+  const text = `Name: ${d.name}\nCompany: ${d.company || 'Not provided'}\nEmail: ${d.email}\nPhone: ${d.phone || 'Not provided'}\nInterest: ${d.topic}\n\nProject details:\n${d.message}\n`
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #0a1440; margin-top: 0;">New Website Enquiry</h2>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr><td style="padding: 8px 0; color: #64748b; width: 120px;"><strong>Name:</strong></td><td style="padding: 8px 0; color: #0f172a;">${d.name}</td></tr>
+        <tr><td style="padding: 8px 0; color: #64748b;"><strong>Company:</strong></td><td style="padding: 8px 0; color: #0f172a;">${d.company || 'Not provided'}</td></tr>
+        <tr><td style="padding: 8px 0; color: #64748b;"><strong>Email:</strong></td><td style="padding: 8px 0; color: #0f172a;"><a href="mailto:${d.email}">${d.email}</a></td></tr>
+        <tr><td style="padding: 8px 0; color: #64748b;"><strong>Phone:</strong></td><td style="padding: 8px 0; color: #0f172a;">${d.phone || 'Not provided'}</td></tr>
+        <tr><td style="padding: 8px 0; color: #64748b;"><strong>Interest:</strong></td><td style="padding: 8px 0; color: #0f172a;">${d.topic}</td></tr>
+      </table>
+      <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;" />
+      <h3 style="color: #0a1440; margin-bottom: 8px;">Project Details</h3>
+      <p style="white-space: pre-wrap; color: #334155; line-height: 1.6; margin: 0; background: #f8fafc; padding: 12px; border-radius: 6px;">${d.message}</p>
+    </div>
+  `
 
   const mailOptions = {
     from: SMTP_USER, // Clean email address for strict anti-spoofing and SPF validation
     to: MAIL_TO,
-    bcc: 'varikuppalaa.sampath@gmail.com', // Direct copy to your personal Gmail inbox
+    bcc: 'varikuppalaa.sampath@gmail.com', // Direct copy to personal Gmail inbox
     replyTo: d.email,
     subject: `Website enquiry: ${d.topic} - ${d.name}`,
     text,
+    html,
   }
 
   // 1. Immediately save lead to disk so no customer enquiry is ever lost
@@ -215,12 +246,17 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 
 async function sendEnquiryNotification(mailOptions) {
   try {
-    await primaryMailer.sendMail(mailOptions);
+    const info = await primaryMailer.sendMail(mailOptions);
+    lastMailStatus = { at: new Date().toISOString(), ok: true, method: '587-STARTTLS', id: info.messageId };
+    console.log('Enquiry email sent via primary SMTP (587):', info.messageId);
   } catch (primaryErr) {
     console.warn('Primary SMTP (587) failed, retrying on 465:', primaryErr.message);
     try {
-      await fallbackMailer.sendMail(mailOptions);
+      const info = await fallbackMailer.sendMail(mailOptions);
+      lastMailStatus = { at: new Date().toISOString(), ok: true, method: '465-SSL', id: info.messageId };
+      console.log('Enquiry email sent via fallback SMTP (465):', info.messageId);
     } catch (fallbackErr) {
+      lastMailStatus = { at: new Date().toISOString(), ok: false, primaryErr: primaryErr.message, fallbackErr: fallbackErr.message };
       console.error('All background SMTP attempts failed:', fallbackErr.message);
     }
   }
