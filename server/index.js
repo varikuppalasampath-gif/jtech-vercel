@@ -100,40 +100,40 @@ const {
 
 let lastMailStatus = { at: null, ok: null, method: null, err: null }
 
-// Primary mailer: Port 587 STARTTLS
+// Primary mailer: Port 587 STARTTLS (Hostinger)
 const primaryMailer = nodemailer.createTransport({
   host: SMTP_HOST,
   port: 587,
   secure: false,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 20000,
-  greetingTimeout: 15000,
-  socketTimeout: 30000,
+  connectionTimeout: 4000,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
 })
 
-// Fallback mailer: Port 465 SSL
+// Fallback mailer: Port 465 SSL (Hostinger)
 const fallbackMailer = nodemailer.createTransport({
   host: SMTP_HOST,
   port: 465,
   secure: true,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 20000,
-  greetingTimeout: 15000,
-  socketTimeout: 30000,
+  connectionTimeout: 4000,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
 })
 
-// GoDaddy internal relay mailer (for GoDaddy shared & container networks)
+// GoDaddy internal relay mailer (for GoDaddy hosting network)
 const godaddyRelayMailer = nodemailer.createTransport({
   host: 'relay-hosting.secureserver.net',
   port: 25,
   secure: false,
   auth: false,
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 8000,
-  greetingTimeout: 8000,
-  socketTimeout: 10000,
+  connectionTimeout: 4000,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
 })
 
 app.get('/api/health', (_req, res) => res.json({
@@ -268,18 +268,32 @@ app.post('/api/enquiry', limiter, async (req, res) => {
     fs.appendFileSync(path.join(__dirname, 'enquiries.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...d }) + '\n');
   } catch (_) { }
 
-  // 2. Respond immediately with success so reverse proxy (Cloudflare/GoDaddy) never triggers a timeout
-  res.json({ ok: true, message: 'Enquiry received' });
+  // 2. Await the email sending operation and verify provider confirmation
+  const delivery = await sendEnquiryNotification(mailOptions);
 
-  // 3. Dispatch email asynchronously in background with multi-tier fallback
-  sendEnquiryNotification(mailOptions);
+  if (delivery.ok) {
+    console.log(`✓ Enquiry email successfully confirmed by provider [${delivery.provider}] id: ${delivery.id || 'N/A'}`);
+    return res.json({
+      ok: true,
+      message: 'Enquiry sent. We will reply within one working day.',
+      provider: delivery.provider,
+    });
+  } else {
+    // Return failure response when email sending fails. Never display a false success message.
+    console.error('✗ Enquiry email failed across all configured providers:', delivery.reason || 'Unknown error');
+    return res.status(502).json({
+      ok: false,
+      error: 'Could not deliver enquiry through server. Please click below to send directly via Gmail.',
+      reason: delivery.reason,
+    });
+  }
 });
 
 async function sendEnquiryNotification(mailOptions) {
   // Tier 1: Resend HTTPS API (Port 443 - immune to container port blocks)
   if (process.env.RESEND_API_KEY) {
     const fromAddr = process.env.RESEND_FROM || 'Jtech Enquiries <onboarding@resend.dev>';
-    const toAddrs = process.env.RESEND_TO ? process.env.RESEND_TO.split(',') : ['varikuppalaa.sampath@gmail.com', 'info@jtech-ai.com'];
+    const toAddrs = process.env.RESEND_TO ? process.env.RESEND_TO.split(',') : ['info@jtech-ai.com', 'varikuppalaa.sampath@gmail.com'];
     try {
       let res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -317,8 +331,7 @@ async function sendEnquiryNotification(mailOptions) {
       if (res.ok) {
         const data = await res.json();
         lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-resend', id: data.id };
-        console.log('Enquiry email sent via Resend HTTPS (443):', data.id);
-        return;
+        return { ok: true, provider: 'resend-https', id: data.id };
       }
       const errText = await res.text();
       console.warn('Resend HTTPS error:', errText);
@@ -348,8 +361,7 @@ async function sendEnquiryNotification(mailOptions) {
       if (res.ok) {
         const data = await res.json();
         lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-brevo', id: data.messageId };
-        console.log('Enquiry email sent via Brevo HTTPS (443):', data.messageId);
-        return;
+        return { ok: true, provider: 'brevo-https', id: data.messageId };
       }
       console.warn('Brevo HTTPS returned non-ok status:', res.status);
     } catch (e) {
@@ -361,8 +373,7 @@ async function sendEnquiryNotification(mailOptions) {
   try {
     const info = await primaryMailer.sendMail(mailOptions);
     lastMailStatus = { at: new Date().toISOString(), ok: true, method: '587-STARTTLS', id: info.messageId };
-    console.log('Enquiry email sent via primary SMTP (587):', info.messageId);
-    return;
+    return { ok: true, provider: 'smtp-587', id: info.messageId };
   } catch (primaryErr) {
     console.warn('Primary SMTP (587) failed:', primaryErr.message);
 
@@ -370,8 +381,7 @@ async function sendEnquiryNotification(mailOptions) {
     try {
       const info = await fallbackMailer.sendMail(mailOptions);
       lastMailStatus = { at: new Date().toISOString(), ok: true, method: '465-SSL', id: info.messageId };
-      console.log('Enquiry email sent via fallback SMTP (465):', info.messageId);
-      return;
+      return { ok: true, provider: 'smtp-465', id: info.messageId };
     } catch (fallbackErr) {
       console.warn('Fallback SMTP (465) failed:', fallbackErr.message);
 
@@ -379,18 +389,19 @@ async function sendEnquiryNotification(mailOptions) {
       try {
         const info = await godaddyRelayMailer.sendMail(mailOptions);
         lastMailStatus = { at: new Date().toISOString(), ok: true, method: '25-GoDaddyRelay', id: info.messageId };
-        console.log('Enquiry email sent via GoDaddy internal relay (25):', info.messageId);
-        return;
+        return { ok: true, provider: 'godaddy-relay-25', id: info.messageId };
       } catch (relayErr) {
+        const errorReason = 'Outbound mail ports (587, 465, 25) blocked by GoDaddy container firewall (EACCES).';
         lastMailStatus = {
           at: new Date().toISOString(),
           ok: false,
           primaryErr: primaryErr.message,
           fallbackErr: fallbackErr.message,
           relayErr: relayErr.message,
-          hint: 'GoDaddy container firewall blocks raw SMTP ports 25, 465, 587. Configure RESEND_API_KEY or BREVO_API_KEY in GoDaddy environment variables to deliver via HTTPS Port 443.'
+          hint: errorReason,
         };
         console.error('All background mail dispatch attempts failed. SMTP ports blocked by container firewall.');
+        return { ok: false, reason: errorReason };
       }
     }
   }
