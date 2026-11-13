@@ -272,11 +272,12 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   const delivery = await sendEnquiryNotification(mailOptions);
 
   if (delivery.ok) {
-    console.log(`✓ Enquiry email successfully confirmed by provider [${delivery.provider}] id: ${delivery.id || 'N/A'}`);
+    console.log(`✓ Enquiry email confirmed by provider [${delivery.provider}] id: ${delivery.id || 'N/A'}`);
     return res.json({
       ok: true,
       message: 'Enquiry sent. We will reply within one working day.',
       provider: delivery.provider,
+      id: delivery.id || undefined,
     });
   } else {
     // Return failure response when email sending fails. Never display a false success message.
@@ -290,12 +291,14 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 });
 
 async function sendEnquiryNotification(mailOptions) {
+  const startTime = new Date().toISOString();
+
   // Tier 1: Resend HTTPS API (Port 443 - immune to container port blocks)
   if (process.env.RESEND_API_KEY) {
     const verifiedFrom = process.env.RESEND_FROM || 'Jtech Enquiries <info@jtech-ai.com>';
     const toAddrs = process.env.RESEND_TO ? process.env.RESEND_TO.split(',') : ['info@jtech-ai.com', 'varikuppalaa.sampath@gmail.com'];
     try {
-      // Attempt 1: Send from domain info@jtech-ai.com to both inboxes
+      // Primary Attempt: Send to configured recipients (info@jtech-ai.com + Gmail notification copy)
       let res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -312,11 +315,28 @@ async function sendEnquiryNotification(mailOptions) {
         }),
       });
 
-      // Attempt 2: If domain info@jtech-ai.com is not yet verified in Resend, fallback to testing sender
+      const resBody = await res.json().catch(() => ({}));
+
+      // Check if Resend accepted the email with valid ID
+      if (res.ok && resBody.id) {
+        lastMailStatus = {
+          at: startTime,
+          ok: true,
+          method: 'resend-https',
+          id: resBody.id,
+          recipients: toAddrs,
+        };
+        console.log(`[Resend OK] Timestamp: ${startTime} | Email ID: ${resBody.id} | Status: Accepted | Recipients: ${toAddrs.join(', ')}`);
+        return { ok: true, provider: 'resend-https', id: resBody.id };
+      }
+
+      // If custom domain is not yet active, capture error and try test domain fallback
+      const resendError = resBody.message || resBody.error || `HTTP ${res.status}`;
+      console.warn(`[Resend Primary Attempt Rejected] ${resendError}`);
+
+      // Fallback Attempt: If unverified testing domain, send backup notification to registered account email
       if (!res.ok) {
-        const firstErr = await res.text();
-        console.warn('Resend custom domain send failed (likely pending verification), retrying via test domain:', firstErr);
-        res = await fetch('https://api.resend.com/emails', {
+        let fallbackRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
@@ -331,16 +351,24 @@ async function sendEnquiryNotification(mailOptions) {
             html: mailOptions.html,
           }),
         });
+        const fallbackBody = await fallbackRes.json().catch(() => ({}));
+        if (fallbackRes.ok && fallbackBody.id) {
+          lastMailStatus = {
+            at: startTime,
+            ok: true,
+            method: 'resend-https-test-fallback',
+            id: fallbackBody.id,
+            recipients: ['varikuppalaa.sampath@gmail.com'],
+            note: 'Delivered to backup Gmail. Complete domain verification in Resend to receive directly in info@jtech-ai.com.',
+          };
+          console.log(`[Resend Fallback OK] Timestamp: ${startTime} | Email ID: ${fallbackBody.id} | Status: Delivered to backup Gmail`);
+          return { ok: true, provider: 'resend-https (backup Gmail)', id: fallbackBody.id };
+        }
       }
-      if (res.ok) {
-        const data = await res.json();
-        lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-resend', id: data.id };
-        return { ok: true, provider: 'resend-https', id: data.id };
-      }
-      const errText = await res.text();
-      console.warn('Resend HTTPS error:', errText);
+
+      console.warn('[Resend Failed] Moving to next configured email provider...');
     } catch (e) {
-      console.warn('Resend HTTPS send failed:', e.message);
+      console.warn(`[Resend Request Exception] ${e.message}`);
     }
   }
 
