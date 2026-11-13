@@ -292,9 +292,10 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 async function sendEnquiryNotification(mailOptions) {
   // Tier 1: Resend HTTPS API (Port 443 - immune to container port blocks)
   if (process.env.RESEND_API_KEY) {
-    const fromAddr = process.env.RESEND_FROM || 'Jtech Enquiries <onboarding@resend.dev>';
+    const verifiedFrom = process.env.RESEND_FROM || 'Jtech Enquiries <info@jtech-ai.com>';
     const toAddrs = process.env.RESEND_TO ? process.env.RESEND_TO.split(',') : ['info@jtech-ai.com', 'varikuppalaa.sampath@gmail.com'];
     try {
+      // Attempt 1: Send from domain info@jtech-ai.com to both inboxes
       let res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -302,7 +303,7 @@ async function sendEnquiryNotification(mailOptions) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: fromAddr,
+          from: verifiedFrom,
           to: toAddrs,
           reply_to: mailOptions.replyTo,
           subject: mailOptions.subject,
@@ -310,8 +311,11 @@ async function sendEnquiryNotification(mailOptions) {
           html: mailOptions.html,
         }),
       });
-      // If testing domain only permits account owner's email, automatically fallback to Gmail recipient:
+
+      // Attempt 2: If domain info@jtech-ai.com is not yet verified in Resend, fallback to testing sender
       if (!res.ok) {
+        const firstErr = await res.text();
+        console.warn('Resend custom domain send failed (likely pending verification), retrying via test domain:', firstErr);
         res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
