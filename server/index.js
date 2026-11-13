@@ -92,49 +92,52 @@ const limiter = rateLimit({
 
 const {
   SMTP_HOST = 'smtp.hostinger.com',
-  SMTP_PORT = 465,
   SMTP_USER = 'info@jtech-ai.com',
   SMTP_PASS = 'Jtech@1981',
   MAIL_TO = 'info@jtech-ai.com',
+  MAIL_NOTIFICATION = 'varikuppalaa.sampath@gmail.com',
 } = process.env
 
-let lastMailStatus = { at: null, ok: null, method: null, err: null }
+let lastMailStatus = { at: null, ok: null, method: null, id: null, err: null }
 
-// Primary mailer: Port 587 STARTTLS (Hostinger)
-const primaryMailer = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: 587,
-  secure: false,
-  auth: { user: SMTP_USER, pass: SMTP_PASS },
-  tls: { rejectUnauthorized: false },
-  connectionTimeout: 4000,
-  greetingTimeout: 3000,
-  socketTimeout: 5000,
-})
-
-// Fallback mailer: Port 465 SSL (Hostinger)
-const fallbackMailer = nodemailer.createTransport({
+// Primary mailer: Hostinger Port 465 SSL
+const smtpMailer465 = nodemailer.createTransport({
   host: SMTP_HOST,
   port: 465,
   secure: true,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 4000,
-  greetingTimeout: 3000,
-  socketTimeout: 5000,
+  connectionTimeout: 10000,
+  greetingTimeout: 8000,
+  socketTimeout: 15000,
 })
 
-// GoDaddy internal relay mailer (for GoDaddy hosting network)
-const godaddyRelayMailer = nodemailer.createTransport({
-  host: 'relay-hosting.secureserver.net',
-  port: 25,
+// Fallback mailer: Hostinger Port 587 STARTTLS
+const smtpMailer587 = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: 587,
   secure: false,
-  auth: false,
+  auth: { user: SMTP_USER, pass: SMTP_PASS },
   tls: { rejectUnauthorized: false },
-  connectionTimeout: 4000,
-  greetingTimeout: 3000,
-  socketTimeout: 5000,
+  connectionTimeout: 10000,
+  greetingTimeout: 8000,
+  socketTimeout: 15000,
 })
+
+// Verify SMTP connection on startup and log result (never logs credentials)
+async function verifySMTP() {
+  for (const [name, t] of [['465-SSL', smtpMailer465], ['587-STARTTLS', smtpMailer587]]) {
+    try {
+      await t.verify()
+      console.log(`✓ SMTP [${name}] connection verified: smtp.hostinger.com ready`)
+      return
+    } catch (e) {
+      console.warn(`✗ SMTP [${name}] verification failed: ${e.message}`)
+    }
+  }
+  console.error('✗ All SMTP transports failed startup verification. Check GoDaddy outbound port restrictions.')
+}
+verifySMTP()
 
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
@@ -250,7 +253,7 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   const mailOptions = {
     from: SMTP_USER, // Clean email address for strict anti-spoofing and SPF validation
     to: MAIL_TO,
-    bcc: 'varikuppalaa.sampath@gmail.com', // Direct copy to personal Gmail inbox
+    bcc: MAIL_NOTIFICATION, // Direct copy to personal Gmail inbox (env: MAIL_NOTIFICATION)
     replyTo: d.email,
     subject: `Website enquiry: ${d.topic} - ${d.name}`,
     text,
@@ -292,151 +295,34 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 
 async function sendEnquiryNotification(mailOptions) {
   const startTime = new Date().toISOString();
+  const errors = [];
 
-  // Tier 1: Resend HTTPS API (Port 443 - immune to container port blocks)
-  if (process.env.RESEND_API_KEY) {
-    const verifiedFrom = process.env.RESEND_FROM || 'Jtech Enquiries <info@jtech-ai.com>';
-    const toAddrs = process.env.RESEND_TO ? process.env.RESEND_TO.split(',') : ['info@jtech-ai.com', 'varikuppalaa.sampath@gmail.com'];
-    try {
-      // Primary Attempt: Send to configured recipients (info@jtech-ai.com + Gmail notification copy)
-      let res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: verifiedFrom,
-          to: toAddrs,
-          reply_to: mailOptions.replyTo,
-          subject: mailOptions.subject,
-          text: mailOptions.text,
-          html: mailOptions.html,
-        }),
-      });
-
-      const resBody = await res.json().catch(() => ({}));
-
-      // Check if Resend accepted the email with valid ID
-      if (res.ok && resBody.id) {
-        lastMailStatus = {
-          at: startTime,
-          ok: true,
-          method: 'resend-https',
-          id: resBody.id,
-          recipients: toAddrs,
-        };
-        console.log(`[Resend OK] Timestamp: ${startTime} | Email ID: ${resBody.id} | Status: Accepted | Recipients: ${toAddrs.join(', ')}`);
-        return { ok: true, provider: 'resend-https', id: resBody.id };
-      }
-
-      // If custom domain is not yet active, capture error and try test domain fallback
-      const resendError = resBody.message || resBody.error || `HTTP ${res.status}`;
-      console.warn(`[Resend Primary Attempt Rejected] ${resendError}`);
-
-      // Fallback Attempt: If unverified testing domain, send backup notification to registered account email
-      if (!res.ok) {
-        let fallbackRes = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'onboarding@resend.dev',
-            to: ['varikuppalaa.sampath@gmail.com'],
-            reply_to: mailOptions.replyTo,
-            subject: mailOptions.subject,
-            text: mailOptions.text,
-            html: mailOptions.html,
-          }),
-        });
-        const fallbackBody = await fallbackRes.json().catch(() => ({}));
-        if (fallbackRes.ok && fallbackBody.id) {
-          lastMailStatus = {
-            at: startTime,
-            ok: true,
-            method: 'resend-https-test-fallback',
-            id: fallbackBody.id,
-            recipients: ['varikuppalaa.sampath@gmail.com'],
-            note: 'Delivered to backup Gmail. Complete domain verification in Resend to receive directly in info@jtech-ai.com.',
-          };
-          console.log(`[Resend Fallback OK] Timestamp: ${startTime} | Email ID: ${fallbackBody.id} | Status: Delivered to backup Gmail`);
-          return { ok: true, provider: 'resend-https (backup Gmail)', id: fallbackBody.id };
-        }
-      }
-
-      console.warn('[Resend Failed] Moving to next configured email provider...');
-    } catch (e) {
-      console.warn(`[Resend Request Exception] ${e.message}`);
-    }
-  }
-
-  // Tier 2: Brevo HTTPS API (Port 443)
-  if (process.env.BREVO_API_KEY) {
-    try {
-      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'api-key': process.env.BREVO_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sender: { name: 'Jtech Enquiries', email: 'info@jtech-ai.com' },
-          to: [{ email: 'info@jtech-ai.com' }, { email: 'varikuppalaa.sampath@gmail.com' }],
-          replyTo: { email: mailOptions.replyTo },
-          subject: mailOptions.subject,
-          textContent: mailOptions.text,
-          htmlContent: mailOptions.html,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        lastMailStatus = { at: new Date().toISOString(), ok: true, method: 'https-brevo', id: data.messageId };
-        return { ok: true, provider: 'brevo-https', id: data.messageId };
-      }
-      console.warn('Brevo HTTPS returned non-ok status:', res.status);
-    } catch (e) {
-      console.warn('Brevo HTTPS send failed:', e.message);
-    }
-  }
-
-  // Tier 3: Primary Hostinger SMTP (Port 587 STARTTLS)
+  // Primary: Hostinger SMTP Port 465 SSL
   try {
-    const info = await primaryMailer.sendMail(mailOptions);
-    lastMailStatus = { at: new Date().toISOString(), ok: true, method: '587-STARTTLS', id: info.messageId };
-    return { ok: true, provider: 'smtp-587', id: info.messageId };
-  } catch (primaryErr) {
-    console.warn('Primary SMTP (587) failed:', primaryErr.message);
-
-    // Tier 4: Fallback Hostinger SMTP (Port 465 SSL)
-    try {
-      const info = await fallbackMailer.sendMail(mailOptions);
-      lastMailStatus = { at: new Date().toISOString(), ok: true, method: '465-SSL', id: info.messageId };
-      return { ok: true, provider: 'smtp-465', id: info.messageId };
-    } catch (fallbackErr) {
-      console.warn('Fallback SMTP (465) failed:', fallbackErr.message);
-
-      // Tier 5: GoDaddy internal hosting relay (Port 25)
-      try {
-        const info = await godaddyRelayMailer.sendMail(mailOptions);
-        lastMailStatus = { at: new Date().toISOString(), ok: true, method: '25-GoDaddyRelay', id: info.messageId };
-        return { ok: true, provider: 'godaddy-relay-25', id: info.messageId };
-      } catch (relayErr) {
-        const errorReason = 'Outbound mail ports (587, 465, 25) blocked by GoDaddy container firewall (EACCES).';
-        lastMailStatus = {
-          at: new Date().toISOString(),
-          ok: false,
-          primaryErr: primaryErr.message,
-          fallbackErr: fallbackErr.message,
-          relayErr: relayErr.message,
-          hint: errorReason,
-        };
-        console.error('All background mail dispatch attempts failed. SMTP ports blocked by container firewall.');
-        return { ok: false, reason: errorReason };
-      }
-    }
+    const info = await smtpMailer465.sendMail(mailOptions);
+    lastMailStatus = { at: startTime, ok: true, method: 'smtp-465-ssl', id: info.messageId };
+    console.log(`[SMTP OK] Timestamp: ${startTime} | Port: 465-SSL | Message ID: ${info.messageId} | Accepted: ${(info.accepted || []).join(', ')}`);
+    return { ok: true, provider: 'hostinger-smtp-465', id: info.messageId };
+  } catch (e465) {
+    errors.push(`465-SSL: ${e465.message}`);
+    console.warn(`[SMTP 465 Failed] ${e465.message}`);
   }
+
+  // Fallback: Hostinger SMTP Port 587 STARTTLS
+  try {
+    const info = await smtpMailer587.sendMail(mailOptions);
+    lastMailStatus = { at: startTime, ok: true, method: 'smtp-587-starttls', id: info.messageId };
+    console.log(`[SMTP OK] Timestamp: ${startTime} | Port: 587-STARTTLS | Message ID: ${info.messageId} | Accepted: ${(info.accepted || []).join(', ')}`);
+    return { ok: true, provider: 'hostinger-smtp-587', id: info.messageId };
+  } catch (e587) {
+    errors.push(`587-STARTTLS: ${e587.message}`);
+    console.warn(`[SMTP 587 Failed] ${e587.message}`);
+  }
+
+  const reason = errors.join(' | ');
+  lastMailStatus = { at: startTime, ok: false, method: null, id: null, err: reason };
+  console.error(`[SMTP All Failed] Timestamp: ${startTime} | ${reason}`);
+  return { ok: false, reason: `SMTP delivery failed: ${reason}` };
 }
 
 // Protected admin endpoint to view all captured leads from GoDaddy MySQL or file
