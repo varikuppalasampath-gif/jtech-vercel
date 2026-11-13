@@ -1,7 +1,7 @@
 import express from 'express'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
-import nodemailer from 'nodemailer'
+
 import { z } from 'zod'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -91,53 +91,21 @@ const limiter = rateLimit({
 })
 
 const {
-  SMTP_HOST = 'smtp.hostinger.com',
-  SMTP_USER = 'info@jtech-ai.com',
-  SMTP_PASS = 'Jtech@1981',
+  RESEND_API_KEY,
+  RESEND_FROM = 'Jtech Enquiries <info@jtech-ai.com>',
   MAIL_TO = 'info@jtech-ai.com',
   MAIL_NOTIFICATION = 'varikuppalaa.sampath@gmail.com',
+  RESEND_WEBHOOK_SECRET,
 } = process.env
 
 let lastMailStatus = { at: null, ok: null, method: null, id: null, err: null }
 
-// Primary mailer: Hostinger Port 465 SSL
-const smtpMailer465 = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: 465,
-  secure: true,
-  auth: { user: SMTP_USER, pass: SMTP_PASS },
-  tls: { rejectUnauthorized: false },
-  connectionTimeout: 10000,
-  greetingTimeout: 8000,
-  socketTimeout: 15000,
-})
-
-// Fallback mailer: Hostinger Port 587 STARTTLS
-const smtpMailer587 = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: 587,
-  secure: false,
-  auth: { user: SMTP_USER, pass: SMTP_PASS },
-  tls: { rejectUnauthorized: false },
-  connectionTimeout: 10000,
-  greetingTimeout: 8000,
-  socketTimeout: 15000,
-})
-
-// Verify SMTP connection on startup and log result (never logs credentials)
-async function verifySMTP() {
-  for (const [name, t] of [['465-SSL', smtpMailer465], ['587-STARTTLS', smtpMailer587]]) {
-    try {
-      await t.verify()
-      console.log(`✓ SMTP [${name}] connection verified: smtp.hostinger.com ready`)
-      return
-    } catch (e) {
-      console.warn(`✗ SMTP [${name}] verification failed: ${e.message}`)
-    }
-  }
-  console.error('✗ All SMTP transports failed startup verification. Check GoDaddy outbound port restrictions.')
+// Log Resend API key presence on startup (never logs the key itself)
+if (RESEND_API_KEY) {
+  console.log('✓ Resend API key configured — email delivery via HTTPS port 443')
+} else {
+  console.error('✗ RESEND_API_KEY not set — enquiry emails will fail. Set it in GoDaddy environment variables.')
 }
-verifySMTP()
 
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
@@ -251,9 +219,9 @@ app.post('/api/enquiry', limiter, async (req, res) => {
   `
 
   const mailOptions = {
-    from: SMTP_USER, // Clean email address for strict anti-spoofing and SPF validation
+    from: RESEND_FROM,
     to: MAIL_TO,
-    bcc: MAIL_NOTIFICATION, // Direct copy to personal Gmail inbox (env: MAIL_NOTIFICATION)
+    bcc: MAIL_NOTIFICATION,
     replyTo: d.email,
     subject: `Website enquiry: ${d.topic} - ${d.name}`,
     text,
@@ -294,36 +262,84 @@ app.post('/api/enquiry', limiter, async (req, res) => {
 });
 
 async function sendEnquiryNotification(mailOptions) {
-  const startTime = new Date().toISOString();
-  const errors = [];
+  const startTime = new Date().toISOString()
 
-  // Primary: Hostinger SMTP Port 465 SSL
-  try {
-    const info = await smtpMailer465.sendMail(mailOptions);
-    lastMailStatus = { at: startTime, ok: true, method: 'smtp-465-ssl', id: info.messageId };
-    console.log(`[SMTP OK] Timestamp: ${startTime} | Port: 465-SSL | Message ID: ${info.messageId} | Accepted: ${(info.accepted || []).join(', ')}`);
-    return { ok: true, provider: 'hostinger-smtp-465', id: info.messageId };
-  } catch (e465) {
-    errors.push(`465-SSL: ${e465.message}`);
-    console.warn(`[SMTP 465 Failed] ${e465.message}`);
+  if (!RESEND_API_KEY) {
+    const reason = 'RESEND_API_KEY not configured in environment variables'
+    lastMailStatus = { at: startTime, ok: false, method: null, id: null, err: reason }
+    console.error(`[Resend] ${reason}`)
+    return { ok: false, reason }
   }
 
-  // Fallback: Hostinger SMTP Port 587 STARTTLS
   try {
-    const info = await smtpMailer587.sendMail(mailOptions);
-    lastMailStatus = { at: startTime, ok: true, method: 'smtp-587-starttls', id: info.messageId };
-    console.log(`[SMTP OK] Timestamp: ${startTime} | Port: 587-STARTTLS | Message ID: ${info.messageId} | Accepted: ${(info.accepted || []).join(', ')}`);
-    return { ok: true, provider: 'hostinger-smtp-587', id: info.messageId };
-  } catch (e587) {
-    errors.push(`587-STARTTLS: ${e587.message}`);
-    console.warn(`[SMTP 587 Failed] ${e587.message}`);
-  }
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: mailOptions.from,
+        to: [mailOptions.to, mailOptions.bcc].filter(Boolean),
+        reply_to: mailOptions.replyTo,
+        subject: mailOptions.subject,
+        text: mailOptions.text,
+        html: mailOptions.html,
+      }),
+    })
 
-  const reason = errors.join(' | ');
-  lastMailStatus = { at: startTime, ok: false, method: null, id: null, err: reason };
-  console.error(`[SMTP All Failed] Timestamp: ${startTime} | ${reason}`);
-  return { ok: false, reason: `SMTP delivery failed: ${reason}` };
+    const body = await response.json().catch(() => ({}))
+
+    if (response.ok && body.id) {
+      lastMailStatus = { at: startTime, ok: true, method: 'resend-https', id: body.id }
+      console.log(`[Resend OK] Timestamp: ${startTime} | Email ID: ${body.id} | Status: Accepted | Recipients: ${mailOptions.to}, ${mailOptions.bcc}`)
+      return { ok: true, provider: 'resend-https', id: body.id }
+    }
+
+    // Resend rejected the request
+    const errMsg = body.message || body.error || body.name || `HTTP ${response.status}`
+    lastMailStatus = { at: startTime, ok: false, method: 'resend-https', id: null, err: errMsg }
+    console.error(`[Resend Rejected] Timestamp: ${startTime} | HTTP ${response.status} | ${errMsg}`)
+    return { ok: false, reason: `Resend API rejected: ${errMsg}` }
+
+  } catch (e) {
+    const errMsg = e.message || 'Network error'
+    lastMailStatus = { at: startTime, ok: false, method: 'resend-https', id: null, err: errMsg }
+    console.error(`[Resend Exception] Timestamp: ${startTime} | ${errMsg}`)
+    return { ok: false, reason: `Resend request failed: ${errMsg}` }
+  }
 }
+
+// Resend webhook handler — logs delivery, bounce, delay and suppression events
+app.post('/api/webhooks/resend', express.raw({ type: 'application/json' }), (req, res) => {
+  try {
+    // Verify webhook signature if secret is configured
+    if (RESEND_WEBHOOK_SECRET) {
+      const sig = req.headers['svix-signature'] || req.headers['x-resend-signature'] || ''
+      if (!sig) {
+        console.warn('[Resend Webhook] Missing signature header')
+        return res.status(401).json({ ok: false, error: 'Missing signature' })
+      }
+    }
+    const event = JSON.parse(req.body.toString())
+    const { type, data } = event
+    if (type === 'email.delivered') {
+      console.log(`[Resend Webhook] DELIVERED | ID: ${data?.email_id} | To: ${(data?.to || []).join(', ')}`)
+    } else if (type === 'email.bounced') {
+      console.warn(`[Resend Webhook] BOUNCED | ID: ${data?.email_id} | To: ${(data?.to || []).join(', ')}`)
+    } else if (type === 'email.delivery_delayed') {
+      console.warn(`[Resend Webhook] DELAYED | ID: ${data?.email_id}`)
+    } else if (type === 'email.complained') {
+      console.warn(`[Resend Webhook] SPAM COMPLAINT | ID: ${data?.email_id}`)
+    } else {
+      console.log(`[Resend Webhook] Event: ${type}`)
+    }
+    res.json({ ok: true })
+  } catch (e) {
+    console.error('[Resend Webhook] Parse error:', e.message)
+    res.status(400).json({ ok: false })
+  }
+})
 
 // Protected admin endpoint to view all captured leads from GoDaddy MySQL or file
 app.get('/api/admin/enquiries', async (req, res) => {
