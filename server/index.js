@@ -29,21 +29,32 @@ app.use(express.json({ limit: '20kb' }))
 
 // MySQL database connection pool (auto-configured via GoDaddy secrets or environment variables)
 let db = null
-if (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER) {
+const {
+  DB_HOST = 'localhost',
+  DB_PORT = '3306',
+  DB_NAME,
+  DB_USER,
+  DB_PASSWORD,
+  DB_PASS,
+  DB_CHARSET = 'utf8mb4',
+} = process.env
+
+if (DB_NAME && DB_USER) {
   try {
     db = mysql.createPool({
-      host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT || '3306'),
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD || process.env.DB_PASS || '',
-      database: process.env.DB_NAME,
+      host: DB_HOST,
+      port: Number(DB_PORT || '3306'),
+      user: DB_USER,
+      password: DB_PASSWORD || DB_PASS || '',
+      database: DB_NAME,
+      charset: DB_CHARSET || 'utf8mb4',
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10000,
     })
-    console.log(`✓ Attached GoDaddy MySQL database: ${process.env.DB_NAME} on ${process.env.DB_HOST}:${process.env.DB_PORT || 3306}`)
+    console.log(`✓ Attached GoDaddy MySQL database: ${DB_NAME} on ${DB_HOST}:${DB_PORT} (charset: ${DB_CHARSET})`)
     // Ensure enquiries table exists in GoDaddy MySQL database
     db.query(`
       CREATE TABLE IF NOT EXISTS enquiries (
@@ -62,7 +73,7 @@ if (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER) {
     db = null
   }
 } else {
-  console.log('ℹ No DB_HOST/DB_NAME detected in environment; using fallback file storage for visitor analytics.')
+  console.log('ℹ No DB_NAME/DB_USER detected in environment; using fallback file storage for visitor analytics.')
 }
 
 const schema = z.object({
