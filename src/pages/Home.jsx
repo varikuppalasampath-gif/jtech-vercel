@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import Network from '../components/Network.jsx'
 import Gear from '../components/Gear.jsx'
 import CardGrid from '../components/CardGrid.jsx'
+import Clients from '../components/Clients.jsx'
 import { Approach, Audience, About, ContactSection } from '../components/shared.jsx'
 import { SERVICES, TAGS } from '../constants.js'
 
@@ -33,6 +34,8 @@ export default function Home({ topic, setTopic }) {
           <div>{[...TAGS, ...TAGS].map((t, i) => <span key={i}>{t}</span>)}</div>
         </div>
       </section>
+
+      <Clients />
 
       <section className="sec">
         <div className="wrap">
