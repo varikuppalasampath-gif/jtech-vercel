@@ -32,7 +32,7 @@ let db = null
 const {
   DB_HOST = 'localhost',
   DB_PORT = '3306',
-  DB_NAME,
+  DB_NAME = 'jtech_db',
   DB_USER,
   DB_PASSWORD,
   DB_PASS,

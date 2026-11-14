@@ -4,7 +4,7 @@
 
 $DB_HOST = getenv('DB_HOST') ?: 'localhost';
 $DB_PORT = getenv('DB_PORT') ?: '3306';
-$DB_NAME = getenv('DB_NAME') ?: 'jtech_visitor_analytics';
+$DB_NAME = getenv('DB_NAME') ?: 'jtech_db';
 $DB_USER = getenv('DB_USER') ?: 'root';
 $DB_PASS = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : (getenv('DB_PASS') !== false ? getenv('DB_PASS') : '');
 $DB_CHARSET = getenv('DB_CHARSET') ?: 'utf8mb4';
