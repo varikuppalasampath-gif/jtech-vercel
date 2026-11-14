@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Link, useLocation } from 'react-router-dom'
 import { Menu, X, MessageCircle, Users } from 'lucide-react'
 
@@ -13,6 +13,7 @@ import Contact from './pages/Contact.jsx'
 import PageHead from './components/PageHead.jsx'
 import GoogleAnalytics from './components/GoogleAnalytics.jsx'
 import CursorInteraction from './components/CursorInteraction.jsx'
+import VisitorDashboard from './components/VisitorDashboard.jsx'
 
 import { PHONE, NAV, PAGE_METADATA } from './constants.js'
 
@@ -38,12 +39,49 @@ export function Shell() {
   const [visitorStats, setVisitorStats] = useState(() => {
     try {
       const cached = localStorage.getItem('jtech_visitor_stats')
-      return cached ? JSON.parse(cached) : { total_visitors: 1248, today_visitors: 18 }
+      return cached ? JSON.parse(cached) : null
     } catch (_) {
-      return { total_visitors: 1248, today_visitors: 18 }
+      return null
     }
   })
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsError, setStatsError] = useState(null)
+  const [dashboardOpen, setDashboardOpen] = useState(false)
+  const lastTrackedRef = useRef('')
   const { pathname } = useLocation()
+
+  const fetchStats = async (record = false, path = pathname) => {
+    setStatsLoading(true)
+    setStatsError(null)
+    try {
+      const vid = getOrCreateVisitorId()
+      const url = '/api/visitors'
+      const options = record
+        ? {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ visitor_id: vid, page_path: path }),
+          }
+        : { method: 'GET' }
+
+      const res = await fetch(url, options)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (data && data.ok) {
+        setVisitorStats(data)
+        try {
+          localStorage.setItem('jtech_visitor_stats', JSON.stringify(data))
+        } catch (_) { }
+      } else {
+        throw new Error(data?.error || 'Failed to fetch visitor statistics')
+      }
+    } catch (err) {
+      console.warn('Visitor stats error:', err.message)
+      setStatsError(err.message)
+    } finally {
+      setStatsLoading(false)
+    }
+  }
 
   useEffect(() => {
     setOpen(false)
@@ -67,23 +105,11 @@ export function Shell() {
     const ogUrl = document.querySelector('meta[property="og:url"]')
     if (ogUrl) ogUrl.setAttribute('content', meta.canonical)
 
-    // Track visitor and fetch updated count from GoDaddy database
-    const vid = getOrCreateVisitorId()
-    fetch('/api/visitors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ visitor_id: vid, page_path: pathname }),
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d && d.ok && d.total_visitors) {
-          setVisitorStats(d)
-          try {
-            localStorage.setItem('jtech_visitor_stats', JSON.stringify(d))
-          } catch (_) { }
-        }
-      })
-      .catch(() => { })
+    // Deduplicate tracking calls (prevents double counting in React Strict Mode)
+    if (lastTrackedRef.current !== pathname) {
+      lastTrackedRef.current = pathname
+      fetchStats(true, pathname)
+    }
   }, [pathname])
 
   useEffect(() => {
@@ -138,13 +164,37 @@ export function Shell() {
         <div className="wrap foot">
           <img src="/logo.png" alt="Jtech" width="200" height="45" />
           <span>© {new Date().getFullYear()} Jtech Mechatronics and AI Solutions Pvt. Ltd. All rights reserved.</span>
-          <div className="visitor-badge" title={`Today's visitors: ${visitorStats?.today_visitors || 1}`}>
+          <button
+            type="button"
+            className="visitor-badge"
+            onClick={() => setDashboardOpen(true)}
+            title="Click to view Visitor Analytics Dashboard"
+            aria-label="View Visitor Analytics Dashboard"
+          >
             <span className="live-dot" aria-hidden="true" />
             <Users size={14} />
-            <span>Visitors: <strong>{(visitorStats?.total_visitors || 1248).toLocaleString()}</strong></span>
-          </div>
+            <span>
+              Visitors:{' '}
+              <strong>
+                {visitorStats?.total_visitors != null
+                  ? visitorStats.total_visitors.toLocaleString()
+                  : statsLoading
+                    ? '...'
+                    : '1'}
+              </strong>
+            </span>
+          </button>
         </div>
       </footer>
+
+      <VisitorDashboard
+        isOpen={dashboardOpen}
+        onClose={() => setDashboardOpen(false)}
+        stats={visitorStats}
+        loading={statsLoading}
+        error={statsError}
+        onRefresh={() => fetchStats(false)}
+      />
 
       <a
         className="wa"

@@ -134,6 +134,10 @@ try {
 } catch (_) { }
 
 app.all('/api/visitors', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('Expires', '0')
+
   const vid = (req.body && req.body.visitor_id) || req.query.visitor_id
   const pagePath = (req.body && req.body.page_path) || req.query.page_path || '/'
 
@@ -160,20 +164,31 @@ app.all('/api/visitors', async (req, res) => {
         )
       }
 
+      // 1. Total Visitors (Lifetime): COUNT(DISTINCT visitor_id)
       const [[totalRow]] = await db.query('SELECT COUNT(DISTINCT visitor_id) AS total_visitors FROM unique_visitors_daily')
-      const [[todayRow]] = await db.query('SELECT COUNT(*) AS today_visitors FROM unique_visitors_daily WHERE visit_date = CURDATE()')
-      const [[viewsRow]] = await db.query('SELECT COUNT(*) AS total_views FROM visitor_events')
+      // 2. Total Unique Visitor-Days: COUNT(*)
+      const [[visitorDaysRow]] = await db.query('SELECT COUNT(*) AS total_visitor_days FROM unique_visitors_daily')
+      // 3. Total Page Views: COUNT(*)
+      const [[viewsRow]] = await db.query('SELECT COUNT(*) AS total_page_views FROM visitor_events')
+      // 4. Today's Unique Visitors: COUNT(DISTINCT visitor_id) WHERE visit_date = CURDATE()
+      const [[todayRow]] = await db.query('SELECT COUNT(DISTINCT visitor_id) AS today_visitors FROM unique_visitors_daily WHERE visit_date = CURDATE()')
+      // 5. Daily Visitor Statistics
+      const [dailyRows] = await db.query('SELECT DATE_FORMAT(visit_date, "%Y-%m-%d") AS visit_date, COUNT(DISTINCT visitor_id) AS visitors FROM unique_visitors_daily GROUP BY visit_date ORDER BY visit_date ASC')
 
       const total_visitors = Number(totalRow?.total_visitors || 0)
+      const total_visitor_days = Number(visitorDaysRow?.total_visitor_days || 0)
+      const total_page_views = Number(viewsRow?.total_page_views || 0)
       const today_visitors = Number(todayRow?.today_visitors || 0)
-      const total_views = Number(viewsRow?.total_views || 0)
 
       return res.json({
         ok: true,
         source: 'database',
         total_visitors: Math.max(1, total_visitors),
+        total_visitor_days: Math.max(1, total_visitor_days),
+        total_page_views: Math.max(1, total_page_views),
+        total_views: Math.max(1, total_page_views), // for backward compatibility
         today_visitors: Math.max(1, today_visitors),
-        total_views: Math.max(1, total_views),
+        daily_stats: Array.isArray(dailyRows) ? dailyRows.map(r => ({ visit_date: r.visit_date, visitors: Number(r.visitors) })) : [],
       })
     } catch (err) {
       console.error('MySQL visitor query error:', err.message)
@@ -202,8 +217,11 @@ app.all('/api/visitors', async (req, res) => {
     ok: true,
     source: 'local_file',
     total_visitors: visitorData.total_visitors,
-    today_visitors: visitorData.today_visitors,
+    total_visitor_days: visitorData.total_visitors,
+    total_page_views: (visitorData.total_visitors || 1) * 3,
     total_views: (visitorData.total_visitors || 1) * 3,
+    today_visitors: visitorData.today_visitors,
+    daily_stats: [{ visit_date: today, visitors: visitorData.today_visitors }],
   })
 })
 
