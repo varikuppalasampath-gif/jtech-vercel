@@ -394,6 +394,45 @@ app.get('/api/admin/enquiries', async (req, res) => {
   res.json({ ok: true, source: 'none', count: 0, enquiries: [] });
 });
 
+// Protected admin endpoint to fetch raw visitor database records
+app.get('/api/admin/visitors', async (req, res) => {
+  const token = req.query.key || req.headers['x-admin-key'];
+  if (token !== (process.env.ADMIN_KEY || 'jtech2026')) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized. Use ?key=jtech2026' });
+  }
+  if (db) {
+    try {
+      const [[totalRow]] = await db.query('SELECT COUNT(DISTINCT visitor_id) AS total_visitors FROM unique_visitors_daily');
+      const [[visitorDaysRow]] = await db.query('SELECT COUNT(*) AS total_visitor_days FROM unique_visitors_daily');
+      const [[viewsRow]] = await db.query('SELECT COUNT(*) AS total_page_views FROM visitor_events');
+      const [[todayRow]] = await db.query('SELECT COUNT(DISTINCT visitor_id) AS today_visitors FROM unique_visitors_daily WHERE visit_date = CURDATE()');
+      const [dailyStats] = await db.query('SELECT DATE_FORMAT(visit_date, "%Y-%m-%d") AS visit_date, COUNT(DISTINCT visitor_id) AS visitors FROM unique_visitors_daily GROUP BY visit_date ORDER BY visit_date DESC LIMIT 30');
+      const [recentDailyRows] = await db.query('SELECT visitor_id, DATE_FORMAT(visit_date, "%Y-%m-%d") AS visit_date, first_seen_at FROM unique_visitors_daily ORDER BY visit_date DESC, first_seen_at DESC LIMIT 100');
+      const [recentEvents] = await db.query('SELECT * FROM visitor_events ORDER BY visited_at DESC LIMIT 100');
+
+      return res.json({
+        ok: true,
+        source: 'database',
+        summary: {
+          total_visitors: Number(totalRow?.total_visitors || 0),
+          total_visitor_days: Number(visitorDaysRow?.total_visitor_days || 0),
+          total_page_views: Number(viewsRow?.total_page_views || 0),
+          today_visitors: Number(todayRow?.today_visitors || 0),
+        },
+        daily_stats: dailyStats,
+        unique_visitors_daily_count: recentDailyRows.length,
+        unique_visitors_daily: recentDailyRows,
+        visitor_events_count: recentEvents.length,
+        visitor_events: recentEvents,
+      });
+    } catch (e) {
+      console.error('Admin visitors query error:', e.message);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+  res.json({ ok: false, source: 'none', error: 'Database connection not active' });
+});
+
 if (fs.existsSync(dist)) {
   app.use(express.static(dist, {
     maxAge: '1y',
