@@ -126,6 +126,80 @@ app.get('/api/health', (_req, res) => res.json({
   db: db ? 'connected' : 'disabled'
 }))
 
+// Temporary production MySQL diagnostic endpoint
+app.get('/api/db-diagnostic', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('Expires', '0')
+
+  // Optional secure admin token check
+  const token = req.query.key || req.headers['x-admin-key']
+  const adminKey = process.env.ADMIN_KEY || 'jtech2026'
+  if (token && token !== adminKey) {
+    return res.status(401).json({ connection: 'UNAUTHORIZED', error: 'Invalid admin key' })
+  }
+
+  // 1. Verify existing MySQL connection pool availability
+  if (!db) {
+    return res.status(503).json({
+      connection: 'NOT_CONFIGURED',
+      error: 'MySQL connection pool is not configured or initialized.',
+    })
+  }
+
+  let conn = null
+  try {
+    // Acquire a connection from the pool
+    conn = await db.getConnection()
+
+    // 2. Retrieve actual production database & session details
+    const [[serverInfo]] = await conn.query(`
+      SELECT
+        DATABASE() AS database_name,
+        CURRENT_USER() AS mysql_user,
+        @@hostname AS mysql_host,
+        @@port AS mysql_port
+    `)
+
+    // 3. Retrieve actual visitor table counts
+    const [[eventsCount]] = await conn.query('SELECT COUNT(*) AS total FROM visitor_events')
+    const [[daysCount]] = await conn.query('SELECT COUNT(*) AS total FROM unique_visitors_daily')
+    const [[uniqueCount]] = await conn.query('SELECT COUNT(DISTINCT visitor_id) AS total FROM unique_visitors_daily')
+    const [[nullCheck]] = await conn.query(`
+      SELECT
+        COUNT(*) AS total_rows,
+        SUM(visitor_id IS NULL) AS null_visitor_ids,
+        SUM(visitor_id = '') AS empty_visitor_ids
+      FROM unique_visitors_daily
+    `)
+
+    // 4. Return structured JSON response
+    return res.json({
+      connection: 'SUCCESS',
+      database: serverInfo?.database_name || null,
+      mysql_user: serverInfo?.mysql_user || null,
+      mysql_host: serverInfo?.mysql_host || null,
+      mysql_port: Number(serverInfo?.mysql_port || 3306),
+      visitor_events_rows: Number(eventsCount?.total || 0),
+      visitor_days_rows: Number(daysCount?.total || 0),
+      unique_visitors: Number(uniqueCount?.total || 0),
+      null_visitor_ids: Number(nullCheck?.null_visitor_ids || 0),
+      empty_visitor_ids: Number(nullCheck?.empty_visitor_ids || 0),
+    })
+  } catch (err) {
+    console.error('[DB Diagnostic Error]:', err.message)
+    return res.status(500).json({
+      connection: 'ERROR',
+      error: 'Database query execution failed.',
+      message: err.message,
+    })
+  } finally {
+    if (conn) {
+      conn.release()
+    }
+  }
+})
+
 const visitorsFile = path.join(__dirname, 'visitors.json')
 let visitorData = { total_visitors: 125, today_visitors: 12, today_date: new Date().toISOString().slice(0, 10), unique_ids: [] }
 try {
