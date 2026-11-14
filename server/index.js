@@ -27,17 +27,42 @@ app.use(helmet({
 }))
 app.use(express.json({ limit: '20kb' }))
 
+// Load .env file if present in project root
+const envPath = path.join(__dirname, '..', '.env')
+let envFileFound = false
+if (fs.existsSync(envPath)) {
+  try {
+    const envLines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/)
+    envFileFound = true
+    for (const line of envLines) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const eq = trimmed.indexOf('=')
+      if (eq !== -1) {
+        const k = trimmed.slice(0, eq).trim()
+        let v = trimmed.slice(eq + 1).trim()
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.slice(1, -1)
+        }
+        if (k) {
+          process.env[k] = v
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error loading .env file:', err.message)
+  }
+}
+
 // MySQL database connection pool (auto-configured via GoDaddy secrets or environment variables)
+// Supports CUSTOM_DB_* or TARGET_DB_* overrides if hosting provider locks default DB_NAME
 let db = null
-const {
-  DB_HOST = 'localhost',
-  DB_PORT = '3306',
-  DB_NAME = 'jtech_db',
-  DB_USER,
-  DB_PASSWORD,
-  DB_PASS,
-  DB_CHARSET = 'utf8mb4',
-} = process.env
+const DB_HOST = process.env.CUSTOM_DB_HOST || process.env.TARGET_DB_HOST || process.env.DB_HOST || 'localhost'
+const DB_PORT = process.env.CUSTOM_DB_PORT || process.env.TARGET_DB_PORT || process.env.DB_PORT || '3306'
+const DB_NAME = process.env.CUSTOM_DB_NAME || process.env.TARGET_DB_NAME || process.env.DB_NAME || 'jtech_db'
+const DB_USER = process.env.CUSTOM_DB_USER || process.env.TARGET_DB_USER || process.env.DB_USER
+const DB_PASSWORD = process.env.CUSTOM_DB_PASSWORD || process.env.TARGET_DB_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || ''
+const DB_CHARSET = process.env.CUSTOM_DB_CHARSET || process.env.DB_CHARSET || 'utf8mb4'
 
 if (DB_NAME && DB_USER) {
   try {
@@ -45,7 +70,7 @@ if (DB_NAME && DB_USER) {
       host: DB_HOST,
       port: Number(DB_PORT || '3306'),
       user: DB_USER,
-      password: DB_PASSWORD || DB_PASS || '',
+      password: DB_PASSWORD,
       database: DB_NAME,
       charset: DB_CHARSET || 'utf8mb4',
       timezone: '+05:30',
@@ -144,6 +169,16 @@ app.get('/api/db-diagnostic', async (req, res) => {
     return res.status(503).json({
       connection: 'NOT_CONFIGURED',
       error: 'MySQL connection pool is not configured or initialized.',
+      env_detected: {
+        DB_NAME: process.env.DB_NAME || '(not set)',
+        CUSTOM_DB_NAME: process.env.CUSTOM_DB_NAME || '(not set)',
+        DB_USER: process.env.DB_USER || '(not set)',
+        CUSTOM_DB_USER: process.env.CUSTOM_DB_USER || '(not set)',
+        DB_HOST: process.env.DB_HOST || '(not set)',
+        CUSTOM_DB_HOST: process.env.CUSTOM_DB_HOST || '(not set)',
+        has_password: Boolean(process.env.CUSTOM_DB_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS),
+        env_file_found: envFileFound,
+      },
     })
   }
 
@@ -161,25 +196,98 @@ app.get('/api/db-diagnostic', async (req, res) => {
         @@port AS mysql_port
     `)
 
-    // 3. Retrieve actual visitor table counts
-    const [[eventsCount]] = await conn.query('SELECT COUNT(*) AS total FROM visitor_events')
-    const [[daysCount]] = await conn.query('SELECT COUNT(*) AS total FROM unique_visitors_daily')
-    const [[uniqueCount]] = await conn.query('SELECT COUNT(DISTINCT visitor_id) AS total FROM unique_visitors_daily')
-    const [[nullCheck]] = await conn.query(`
-      SELECT
-        COUNT(*) AS total_rows,
-        SUM(visitor_id IS NULL) AS null_visitor_ids,
-        SUM(visitor_id = '') AS empty_visitor_ids
-      FROM unique_visitors_daily
-    `)
+    // 3. Inspect visible databases on this MySQL server
+    let visibleDatabases = []
+    try {
+      const [dbs] = await conn.query('SHOW DATABASES')
+      visibleDatabases = dbs.map(d => Object.values(d)[0])
+    } catch (e) {
+      visibleDatabases = [e.message]
+    }
 
-    // 4. Return structured JSON response
+    // 4. Inspect target jtech_db access and schema
+    let targetDbCheck = null
+    try {
+      const [tables] = await conn.query('SHOW TABLES FROM `jtech_db`')
+      const tableNames = tables.map(t => Object.values(t)[0])
+      
+      let jtechEventsRows = null
+      let jtechDaysRows = null
+      let jtechUniqueVisitors = null
+
+      if (tableNames.includes('visitor_events')) {
+        const [[r]] = await conn.query('SELECT COUNT(*) AS total FROM `jtech_db`.visitor_events')
+        jtechEventsRows = Number(r.total)
+      }
+      if (tableNames.includes('unique_visitors_daily')) {
+        const [[r1]] = await conn.query('SELECT COUNT(*) AS total FROM `jtech_db`.unique_visitors_daily')
+        jtechDaysRows = Number(r1.total)
+        const [[r2]] = await conn.query('SELECT COUNT(DISTINCT visitor_id) AS total FROM `jtech_db`.unique_visitors_daily')
+        jtechUniqueVisitors = Number(r2.total)
+      }
+
+      targetDbCheck = {
+        accessible: true,
+        tables: tableNames,
+        has_visitor_events: tableNames.includes('visitor_events'),
+        has_unique_visitors_daily: tableNames.includes('unique_visitors_daily'),
+        has_enquiries: tableNames.includes('enquiries'),
+        visitor_events_rows: jtechEventsRows,
+        visitor_days_rows: jtechDaysRows,
+        unique_visitors: jtechUniqueVisitors,
+      }
+    } catch (e) {
+      targetDbCheck = {
+        accessible: false,
+        error: e.message,
+      }
+    }
+
+    // 5. Retrieve actual visitor table counts for the current database
+    let eventsCount = { total: 0 }
+    let daysCount = { total: 0 }
+    let uniqueCount = { total: 0 }
+    let nullCheck = { null_visitor_ids: 0, empty_visitor_ids: 0 }
+
+    try {
+      const [[ec]] = await conn.query('SELECT COUNT(*) AS total FROM visitor_events')
+      eventsCount = ec
+    } catch (_) {}
+
+    try {
+      const [[dc]] = await conn.query('SELECT COUNT(*) AS total FROM unique_visitors_daily')
+      daysCount = dc
+      const [[uc]] = await conn.query('SELECT COUNT(DISTINCT visitor_id) AS total FROM unique_visitors_daily')
+      uniqueCount = uc
+      const [[nc]] = await conn.query(`
+        SELECT
+          COUNT(*) AS total_rows,
+          SUM(visitor_id IS NULL) AS null_visitor_ids,
+          SUM(visitor_id = '') AS empty_visitor_ids
+        FROM unique_visitors_daily
+      `)
+      nullCheck = nc
+    } catch (_) {}
+
+    // 6. Return structured JSON response
     return res.json({
       connection: 'SUCCESS',
       database: serverInfo?.database_name || null,
       mysql_user: serverInfo?.mysql_user || null,
       mysql_host: serverInfo?.mysql_host || null,
       mysql_port: Number(serverInfo?.mysql_port || 3306),
+      env_detected: {
+        DB_NAME: process.env.DB_NAME || '(not set)',
+        CUSTOM_DB_NAME: process.env.CUSTOM_DB_NAME || '(not set)',
+        DB_USER: process.env.DB_USER || '(not set)',
+        CUSTOM_DB_USER: process.env.CUSTOM_DB_USER || '(not set)',
+        DB_HOST: process.env.DB_HOST || '(not set)',
+        CUSTOM_DB_HOST: process.env.CUSTOM_DB_HOST || '(not set)',
+        has_password: Boolean(process.env.CUSTOM_DB_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS),
+        env_file_found: envFileFound,
+      },
+      visible_databases: visibleDatabases,
+      target_jtech_db: targetDbCheck,
       visitor_events_rows: Number(eventsCount?.total || 0),
       visitor_days_rows: Number(daysCount?.total || 0),
       unique_visitors: Number(uniqueCount?.total || 0),
