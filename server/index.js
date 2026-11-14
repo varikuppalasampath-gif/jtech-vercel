@@ -48,6 +48,7 @@ if (DB_NAME && DB_USER) {
       password: DB_PASSWORD || DB_PASS || '',
       database: DB_NAME,
       charset: DB_CHARSET || 'utf8mb4',
+      timezone: '+05:30',
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
